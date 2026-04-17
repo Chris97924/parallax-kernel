@@ -1,4 +1,4 @@
-# Parallax Kernel
+# Parallax-Kernel-V0.9
 
 Content-addressed canonical knowledge-base store. P0 core: 6-object schema
 (`sources`, `memories`, `claims`, `events`, plus supporting indexes) with
