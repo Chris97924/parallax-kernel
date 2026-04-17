@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Packaging
+dist/
+build/
+*.egg-info/
+
+# Secrets / local data
+.env
+*.db
+db/*.db
+
+# Coverage
+.coverage
+htmlcov/
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Internal / dev-loop artifacts (not for OSS distribution)
+prd.json
+progress.txt
+docs/cloud.md
+.omc/
+
+# Private data vault (personal Obsidian / memory content)
+vault/
+
+# Personal data migration scripts (hardcoded local paths)
+migration/
+
+# Pre-migration backups
+*.pre-migration.backup*/
