@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parallax-kernel"
-version = "0.1.5"
+version = "0.2.0"
 description = "Parallax Kernel — content-addressed canonical knowledge base (P0 core)."
 requires-python = ">=3.11"
 authors = [{ name = "Chris" }]
@@ -32,7 +32,14 @@ exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov=parallax --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["parallax"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
 
 [tool.black]
 line-length = 100
