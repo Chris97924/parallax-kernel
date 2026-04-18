@@ -3,6 +3,67 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.5] - 2026-04-18
+
+### Fixed
+- **Migration framework atomicity (FIX-01).** v0.1.4 used
+  `conn.executescript()` in each migration `up()`, which issues an
+  implicit `COMMIT` and silently broke the documented "DDL + ledger
+  insert succeed-or-fail together" guarantee. v0.1.5 refactors
+  `m0001_initial_schema`, `m0002_events_append_only`, and
+  `m0003_claim_metadata` to expose `STATEMENTS: list[str]` executed
+  individually via `conn.execute(stmt)`, and wraps each migration's
+  `up()`/`down()` plus its matching ledger row in an explicit
+  `BEGIN IMMEDIATE` ... `COMMIT` block (`_manual_tx` contextmanager,
+  `isolation_level = None`). A failure inside `up()` now rolls back
+  both the partial DDL and the ledger insert, so partially-applied
+  migrations are never recorded as applied.
+- **`claim_metadata` FK semantics (FIX-02).** v0.1.4 declared
+  `superseded_by TEXT REFERENCES claims(claim_id)` with no `ON DELETE`
+  clause (defaulting to `NO ACTION` / `RESTRICT`) and no guard against
+  self-supersession. Migration **0005 claim_metadata_fk** recreates
+  the table via the SQLite table-swap pattern (CREATE _new + INSERT
+  SELECT + DROP + RENAME) to add `ON DELETE SET NULL` on
+  `superseded_by` (a deleted successor no longer blocks predecessor
+  deletion; the pointer becomes NULL) and
+  `CHECK (superseded_by IS NULL OR claim_id != superseded_by)` (a row
+  cannot declare itself its own successor). Existing data is preserved
+  in-place across the swap; corrupt self-supersession rows would abort
+  the migration by design.
+
+### Added
+- **Migration 0004 events_user_time_index (FIX-03).** Creates
+  `idx_events_user_time ON events(user_id, created_at)` to back the
+  watermark scan in `parallax.index._last_event_id` and any per-user
+  replay queries. Without this index those queries degrade to a full
+  table scan as the events log grows. Verified via `EXPLAIN QUERY PLAN`
+  in `tests/test_migrations.py::TestEventsUserTimeIndexFix03`.
+- **Migration 0005 claim_metadata_fk (FIX-02).** See the FK fix above.
+- `tests/test_migrations.py::TestAtomicityFix01` — proves
+  `migrate_to_latest` rolls back both the DDL and the ledger insert
+  when a registered migration's `up()` raises mid-way, and proves no
+  shipped migration module calls `executescript`.
+- `tests/test_migrations.py::TestEventsUserTimeIndexFix03` — proves the
+  index is created, that the planner uses it for the watermark query,
+  and that `migrate_down_to(3)` drops it.
+- `tests/test_migrations.py::TestClaimMetadataV5Fix02` — proves the
+  CHECK blocks self-supersession, `ON DELETE SET NULL` clears
+  `superseded_by` when the successor is deleted, data is preserved
+  across the v5 swap, and a down→up round-trip restores the v5 schema.
+
+### Changed
+- `parallax/migrations/__init__.py` docstring rewritten to accurately
+  describe the v0.1.5 atomicity guarantee and to record the new
+  contract for migration authors: each `up()` MUST issue individual
+  `conn.execute(stmt)` calls and MUST NOT call `conn.executescript`
+  (which would issue an implicit COMMIT and break atomicity).
+- `tests/test_bootstrap.py::test_bootstrap_runs_migrations` and the
+  registry-count tests in `tests/test_migrations.py` updated to assert
+  five applied versions `[1, 2, 3, 4, 5]`.
+
+### Packaging
+- `pyproject.toml` version bumped to 0.1.5; `parallax.__version__` matches.
+
 ## [0.1.4] - 2026-04-18
 
 ### Added
