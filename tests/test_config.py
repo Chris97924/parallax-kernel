@@ -16,14 +16,13 @@ import pytest
 
 from parallax.config import ParallaxConfig, load_config
 
-
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class TestParallaxConfig:
     def test_is_frozen_dataclass(self) -> None:
         assert dataclasses.is_dataclass(ParallaxConfig)
-        params = getattr(ParallaxConfig, "__dataclass_params__")
+        params = ParallaxConfig.__dataclass_params__
         assert params.frozen is True
 
     def test_has_expected_fields(self) -> None:

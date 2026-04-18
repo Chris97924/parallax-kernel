@@ -3,6 +3,81 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-04-19
+
+### Added
+- **Session continuity minimum closure.** Five coordinated subsystems land
+  together so a new Claude Code session can see last session's work:
+  1. **`parallax/hooks.py` — Claude Code hook → events ingestion.**
+     Maps `SessionStart`, `SessionEnd`/`Stop`, `UserPromptSubmit`,
+     `PreToolUse` (Bash/Edit/Write/MultiEdit), and `PostToolUse`
+     (Edit/Write/MultiEdit) hook fires onto `events` rows. File-edit
+     hooks back-link to `memories.vault_path` via LIKE suffix match
+     when tracked, and embed a `_path_sha16` fingerprint in the payload
+     when not — so orphan file edits are still discoverable.
+     `ingest_from_json()` takes a raw hook envelope so a single
+     `jq | parallax inspect ingest` pipe works in CI.
+  2. **`parallax/retrieve.py` — explicit retrieval API.** Six entry
+     points (`recent_context`, `by_file`, `by_decision`, `by_bug_fix`,
+     `by_timeline`, `by_entity`) replace the prior free-form query
+     surface. Each returns `RetrievalHit` objects carrying an L1/L2/L3
+     projection score, evidence snippet, and source ref.
+  3. **3-layer progressive disclosure.** `RetrievalHit.project(level)`
+     returns an L1 headline (≤120 chars), L2 context row (~400 chars),
+     or L3 full row with `full` dict populated. Injector uses L1; CLI
+     `--explain` uses L3.
+  4. **`parallax inspect` CLI.** `parallax inspect events --session <id>`
+     dumps hook-ingested events; `parallax inspect retrieve "<query>"
+     --explain` runs the retrieval API and prints per-hit rationale
+     (which column/keyword drove the score). `parallax inspect inject`
+     prints the rendered `<system-reminder>` block for debugging.
+  5. **`parallax/injector.py` — SessionStart injector.** Builds a
+     length-capped (`MAX_REMINDER_CHARS = 2000`) `<system-reminder>`
+     containing recently-modified files + last 3 decisions + recent
+     context, with marker-safe truncation (`... (truncated)`).
+- **`events.session_id` dimension** — migration 0006 adds nullable
+  `session_id` to `events` plus two indexes (`idx_events_session`,
+  `idx_events_type_session`) for session-scoped scans. Included in
+  `schema.sql` so fresh bootstraps get the column directly.
+- **`idx_events_user_time` index in `schema.sql`** — fresh bootstraps
+  previously missed this (migration 0004 was the only source); now
+  both paths produce identical index sets.
+
+### Fixed
+- **LIKE wildcard escaping.** `by_file`, `by_entity`, and
+  `hooks._resolve_target_for_file` now escape `%`, `_`, and `\` in
+  user-provided paths/subjects with `ESCAPE '\\'`. Previously a file
+  named `utils_v2.py` would also match `utilsXv2.py`, and a subject
+  `100% done` would match everything.
+- **N+1 in `by_decision`.** Replaced per-hit claim lookup with a
+  single `WHERE claim_id IN (…)` batch. Decision hit rendering is now
+  O(1) DB round-trips regardless of result set size.
+- **5× loop in `by_bug_fix`.** Replaced five sequential LIKE queries
+  with a single OR-joined statement.
+- **ISO-8601 variant equivalence in `by_timeline`.** `since`/`until`
+  are normalized to UTC `isoformat()` before comparison so `'Z'`
+  suffix and `'+00:00'` produce identical results against the TEXT
+  `created_at` column. Out-of-order `since > until` now raises
+  `ValueError` with a descriptive message instead of silently
+  returning an empty window.
+- **Injector `_trim_to_cap` mutation + marker corruption.** Now makes
+  a defensive copy of the input list and reserves budget for the
+  truncation marker so the output always terminates with the full
+  `... (truncated)` suffix.
+- **CLI import-time default-user trap.** `PARALLAX_USER_ID` is now
+  resolved at command invocation via `_default_user()`, not at module
+  import, so `monkeypatch.setenv` in tests and shell exports in ad
+  hoc use are honored consistently.
+
+### Tests
+- 320 tests, 89.44% coverage. New suites:
+  - `test_retrieve_api.py::TestLikeEscape` + `TestByTimelineErrors` —
+    regression coverage for the wildcard + ISO-normalize fixes.
+  - `test_hooks.py::TestIngestHookTools` — `Write` + `MultiEdit`
+    branches of `_file_edit_event_type`.
+  - `test_events_session_id.py`, `test_cli_inspect.py`,
+    `test_injector.py` — new feature coverage.
+
 ## [0.2.1] - 2026-04-18
 
 ### Added

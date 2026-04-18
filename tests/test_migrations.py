@@ -27,16 +27,17 @@ def empty_conn(tmp_path: pathlib.Path) -> sqlite3.Connection:
 
 
 class TestMigrationRegistry:
-    def test_five_migrations_in_order(self) -> None:
+    def test_migrations_in_order(self) -> None:
         versions = [m.version for m in MIGRATIONS]
         names = [m.name for m in MIGRATIONS]
-        assert versions == [1, 2, 3, 4, 5]
+        assert versions == [1, 2, 3, 4, 5, 6]
         assert names == [
             "initial_schema",
             "events_append_only",
             "claim_metadata",
             "events_user_time_index",
             "claim_metadata_fk",
+            "events_session_id",
         ]
 
     def test_migration_is_frozen_dataclass(self) -> None:
@@ -49,10 +50,10 @@ class TestMigrationRegistry:
 
 
 class TestMigrateToLatest:
-    def test_fresh_db_applies_all_five(self, empty_conn: sqlite3.Connection) -> None:
+    def test_fresh_db_applies_all(self, empty_conn: sqlite3.Connection) -> None:
         applied = migrate_to_latest(empty_conn)
-        assert applied == [1, 2, 3, 4, 5]
-        assert applied_versions(empty_conn) == {1, 2, 3, 4, 5}
+        assert applied == [1, 2, 3, 4, 5, 6]
+        assert applied_versions(empty_conn) == {1, 2, 3, 4, 5, 6}
         assert pending(empty_conn) == []
 
     def test_idempotent_rerun(self, empty_conn: sqlite3.Connection) -> None:
@@ -82,7 +83,7 @@ class TestMigrateToLatest:
         rows = empty_conn.execute(
             "SELECT version, name, applied_at FROM schema_migrations ORDER BY version"
         ).fetchall()
-        assert [r[0] for r in rows] == [1, 2, 3, 4, 5]
+        assert [r[0] for r in rows] == [1, 2, 3, 4, 5, 6]
         for _, _, applied_at in rows:
             assert applied_at  # non-empty ISO timestamp
 
@@ -103,7 +104,7 @@ class TestMigrateDownTo:
         migrate_to_latest(empty_conn)
         migrate_down_to(empty_conn, 0)
         applied = migrate_to_latest(empty_conn)
-        assert applied == [1, 2, 3, 4, 5]
+        assert applied == [1, 2, 3, 4, 5, 6]
 
     def test_down_to_one_keeps_initial_schema(
         self, empty_conn: sqlite3.Connection

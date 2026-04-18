@@ -53,6 +53,7 @@ def record_event(
     target_id: str | None,
     payload: Mapping[str, Any] | None = None,
     approval_tier: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """Append a single event row. Returns the generated event_id.
 
@@ -102,6 +103,7 @@ def record_event(
             payload_json=payload_json,
             approval_tier=approval_tier,
             created_at=now_iso(),
+            session_id=session_id,
         ),
     )
     _log.info(

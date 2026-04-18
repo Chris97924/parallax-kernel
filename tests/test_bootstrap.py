@@ -64,12 +64,14 @@ class TestBootstrap:
         assert cfg.vault_path == (tmp_path / "vault").resolve()
 
     def test_bootstrap_runs_migrations(self, tmp_path: pathlib.Path) -> None:
+        from parallax.migrations import MIGRATIONS
+
         cfg = bootstrap(tmp_path)
         with sqlite3.connect(str(cfg.db_path)) as c:
             rows = c.execute(
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
-        assert [r[0] for r in rows] == [1, 2, 3, 4, 5]
+        assert [r[0] for r in rows] == [m.version for m in MIGRATIONS]
 
 
 class TestCLI:
