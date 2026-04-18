@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parallax-kernel"
-version = "0.2.0"
+version = "0.2.1"
 description = "Parallax Kernel — content-addressed canonical knowledge base (P0 core)."
 requires-python = ">=3.11"
 authors = [{ name = "Chris" }]
@@ -15,6 +15,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "typing-extensions>=4.0",
 ]
+
+[project.scripts]
+parallax = "parallax.cli:main"
 
 [project.optional-dependencies]
 dev = [
