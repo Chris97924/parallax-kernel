@@ -3,6 +3,40 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-04-18
+
+### Added
+- **`tests/acceptance/` — 4-statement SQL acceptance harness (Phase 2 closeout).**
+  Four `.sql` files held as the SSoT (`01_canonical.sql`, `02_identity.sql`,
+  `03_state_traceable.sql`, `04_rebuild_identical.sql`) plus a single
+  `test_acceptance_sql.py` pytest harness that reads each file, parametrizes
+  the placeholders against a one-of-everything seed fixture (1 source,
+  1 memory, 1 claim, 1 `claim.state_changed` event, 1 `index_state` row),
+  and asserts the four Phase 2 acceptance questions at the DB layer:
+  - **01 canonical exists** — `COUNT(*)` of `claims` and `memories` is non-zero.
+  - **02 identity** — every object has a PK lookup that returns exactly 1 row,
+    and the `claims → sources` FK JOIN does not drop the row.
+  - **03 state traceable** — any claim's history replays from `events` ordered
+    by `created_at`, and `payload_json` parses as JSON.
+  - **04 rebuild identical** — `rebuild_index('chroma')` produces a snapshot
+    whose `doc_count` and `state` are byte-equivalent across two consecutive
+    rebuilds when no source data has changed; only `version` increments.
+- **Coverage gate.** `pyproject.toml` now runs pytest with
+  `--cov=parallax --cov-report=term-missing --cov-fail-under=80`.
+  Future PRs that drop coverage below 80% will fail CI. v0.2.0 ships at
+  ~98% total coverage so the gate has substantial headroom.
+
+### Changed
+- `pyproject.toml` `[tool.pytest.ini_options].addopts` now wires the
+  coverage gate; `[tool.coverage.run]` and `[tool.coverage.report]`
+  added to pin the source set to `parallax` and surface missing lines.
+
+### Packaging
+- `pyproject.toml` version bumped to 0.2.0; `parallax.__version__` matches.
+- This release marks the **Phase 2 closeout**. Phase 2 deliverables not in
+  scope for v0.2.0 (`events` full replay, schema introspection dry-run,
+  LongMemEval baseline) intentionally defer to v0.3.x.
+
 ## [0.1.5] - 2026-04-18
 
 ### Fixed
