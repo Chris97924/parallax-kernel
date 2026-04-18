@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS decisions (
 CREATE INDEX IF NOT EXISTS idx_decisions_target ON decisions(target_kind, target_id);
 
 -- 5. events (empty skeleton; append-only enforced in app layer) ----------------
+-- session_id (nullable) added in migration 0006 for Claude Code session
+-- continuity; included here so direct schema bootstraps pick it up too.
 CREATE TABLE IF NOT EXISTS events (
   event_id       TEXT PRIMARY KEY, -- ulid
   user_id        TEXT NOT NULL,
@@ -79,10 +81,14 @@ CREATE TABLE IF NOT EXISTS events (
   target_id      TEXT,
   payload_json   TEXT NOT NULL,    -- before/after snapshot
   approval_tier  TEXT,             -- P0 預留
-  created_at     TIMESTAMP NOT NULL
+  created_at     TIMESTAMP NOT NULL,
+  session_id     TEXT              -- v0.3.0 session continuity dimension
 );
-CREATE INDEX IF NOT EXISTS idx_events_target    ON events(target_kind, target_id);
-CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(event_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_target       ON events(target_kind, target_id);
+CREATE INDEX IF NOT EXISTS idx_events_type_time    ON events(event_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_user_time    ON events(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_session      ON events(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_type_session ON events(event_type, session_id);
 
 -- 6. index_state (empty skeleton) ---------------------------------------------
 CREATE TABLE IF NOT EXISTS index_state (

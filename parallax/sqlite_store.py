@@ -19,7 +19,8 @@ import dataclasses
 import datetime as _dt
 import pathlib
 import sqlite3
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 __all__ = [
     "insert_source",
@@ -39,7 +40,7 @@ __all__ = [
 
 def now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+    return _dt.datetime.now(_dt.UTC).isoformat()
 
 
 # ----- Record dataclasses ---------------------------------------------------
@@ -96,6 +97,7 @@ class Event:
     payload_json: str
     approval_tier: str | None
     created_at: str
+    session_id: str | None = None
 
 
 # ----- Connection helper ----------------------------------------------------
@@ -154,14 +156,19 @@ def insert_claim(conn: sqlite3.Connection, claim: Claim) -> None:
 
 
 def insert_event(conn: sqlite3.Connection, event: Event) -> None:
-    """Append an event row. Events are write-only by contract."""
+    """Append an event row. Events are write-only by contract.
+
+    session_id column exists from migration 0006 onwards; pre-0006 DBs
+    will reject the INSERT with OperationalError, so callers running
+    against older schemas must migrate_to_latest first.
+    """
     with conn:
         conn.execute(
             """
             INSERT INTO events
                 (event_id, user_id, actor, event_type, target_kind, target_id,
-                 payload_json, approval_tier, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 payload_json, approval_tier, created_at, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             dataclasses.astuple(event),
         )

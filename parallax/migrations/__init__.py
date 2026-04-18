@@ -37,6 +37,7 @@ from parallax.migrations import (
     m0003_claim_metadata,
     m0004_events_user_time_index,
     m0005_claim_metadata_fk,
+    m0006_events_session_id,
 )
 from parallax.sqlite_store import now_iso
 
@@ -89,6 +90,12 @@ MIGRATIONS: list[Migration] = [
         name="claim_metadata_fk",
         up=m0005_claim_metadata_fk.up,
         down=m0005_claim_metadata_fk.down,
+    ),
+    Migration(
+        version=6,
+        name="events_session_id",
+        up=m0006_events_session_id.up,
+        down=m0006_events_session_id.down,
     ),
 ]
 

@@ -15,7 +15,6 @@ from bootstrap import bootstrap
 from parallax.ingest import ingest_claim, ingest_memory
 from parallax.sqlite_store import connect, query
 
-
 FIXTURE_MEMORIES = [
     dict(user_id="u1", title="m1", summary="s1", vault_path="users/u1/m1.md"),
     dict(user_id="u1", title="m2", summary="s2", vault_path="users/u1/m2.md"),
