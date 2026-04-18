@@ -32,6 +32,7 @@ from parallax.sqlite_store import (
     now_iso,
     query,
 )
+from parallax.transitions import CLAIM_TRANSITIONS
 
 _log = get_logger("parallax.ingest")
 _tlog = telemetry.get_logger("parallax.ingest.telemetry")
@@ -152,12 +153,24 @@ def ingest_claim(
     object_: str,
     source_id: str | None = None,
     confidence: float | None = None,
+    state: str = "auto",
 ) -> str:
     """UPSERT a claim row. Returns the persisted claim_id.
 
     Race-safe via INSERT OR IGNORE + re-select on the UNIQUE
     (content_hash, source_id) index. See :func:`ingest_memory` for rationale.
+
+    ``state`` must be a registered initial state in
+    :data:`parallax.transitions.CLAIM_TRANSITIONS` (defensive validation at
+    the ingest boundary per the input-validation rule); defaults to
+    ``'auto'`` to preserve prior behaviour. The extract layer uses
+    ``state='pending'`` for low-confidence claims that need review.
     """
+    if state not in CLAIM_TRANSITIONS:
+        raise ValueError(
+            f"invalid claim state {state!r}; "
+            f"expected one of {sorted(CLAIM_TRANSITIONS)}"
+        )
     start = time.perf_counter()
     try:
         if source_id is None:
@@ -177,7 +190,7 @@ def ingest_claim(
                 source_id=source_id,
                 content_hash=ch,
                 confidence=confidence,
-                state="auto",
+                state=state,
                 created_at=now,
                 updated_at=now,
             ),

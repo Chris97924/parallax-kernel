@@ -28,6 +28,9 @@ dev = [
     "isort>=5",
     "ruff>=0.5",
 ]
+extract = [
+    "httpx>=0.27",
+]
 
 [tool.setuptools.packages.find]
 include = ["parallax*"]
@@ -35,7 +38,10 @@ exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=parallax --cov-report=term-missing --cov-fail-under=80"
+addopts = "-q --cov=parallax --cov-report=term-missing --cov-fail-under=80 -m 'not llm_integration'"
+markers = [
+    "llm_integration: hits a real LLM provider (OpenRouter). Skipped by default; run with -m llm_integration and OPENROUTER_API_KEY set.",
+]
 
 [tool.coverage.run]
 source = ["parallax"]
@@ -58,3 +64,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# "S" (flake8-bandit) is intentionally NOT enabled yet: enabling it
+# exposes ~15 pre-existing violations in files outside Phase 3 scope
+# (backup.py, introspection.py, telemetry.py, validators.py, restore.py,
+# plus several test files). Plan to turn it on in a dedicated repo-wide
+# cleanup pass so reviewers can audit each site in isolation.
