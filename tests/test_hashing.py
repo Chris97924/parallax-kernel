@@ -45,9 +45,14 @@ class TestNormalize:
     def test_preserves_internal_whitespace(self) -> None:
         assert normalize("hello world") == "hello world"
 
-    def test_none_is_empty(self) -> None:
-        assert normalize(None) == ""
-        assert normalize("a", None, "c") == "a||||c"
+    def test_none_raises_type_error(self) -> None:
+        # v0.1.2 contract: None is explicitly rejected. Callers must convert
+        # Optional[str] to "" themselves. This makes the boundary contract
+        # explicit and prevents silent hash-equivalence between None and "".
+        with pytest.raises(TypeError, match="None"):
+            normalize(None)
+        with pytest.raises(TypeError, match="None"):
+            normalize("a", None, "c")
 
     def test_empty_call_returns_empty(self) -> None:
         assert normalize() == ""
@@ -93,8 +98,9 @@ class TestContentHash:
     def test_whitespace_insensitive_on_edges(self) -> None:
         assert content_hash("  hi  ") == content_hash("hi")
 
-    def test_none_treated_as_empty(self) -> None:
-        assert content_hash("a", None, "c") == content_hash("a", "", "c")
+    def test_none_propagates_type_error(self) -> None:
+        with pytest.raises(TypeError, match="None"):
+            content_hash("a", None, "c")
 
     def test_schema_memories_example(self) -> None:
         # memories: sha256(normalize(title||summary||vault_path))
@@ -115,7 +121,6 @@ class TestContentHash:
             ("simple",),
             ("", "", ""),
             ("中文", "測試", "雙管道||tricky"),
-            (None, None),
             ("a" * 1000, "b" * 1000),
         ],
     )

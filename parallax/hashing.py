@@ -18,20 +18,33 @@ __all__ = ["normalize", "content_hash"]
 _SEPARATOR = "||"
 
 
-def normalize(*parts: str | None) -> str:
+def normalize(*parts: str) -> str:
     """Return the canonical string form of ``parts`` for hashing.
 
     Each part is NFC-normalized, stripped of surrounding whitespace, and
-    ``None`` is treated as ``""``. Parts are joined with ``"||"`` to match the
-    schema comments. Internal whitespace is preserved.
+    joined with ``"||"`` to match the schema comments. Internal whitespace is
+    preserved.
+
+    ``None`` is rejected with :class:`TypeError` — callers holding
+    ``Optional[str]`` values must convert to ``""`` themselves. This keeps
+    the hash contract explicit at the boundary rather than silently
+    collapsing ``None`` and ``""`` to the same digest.
     """
-    canon = [
-        unicodedata.normalize("NFC", part).strip() if part is not None else ""
-        for part in parts
-    ]
+    canon = []
+    for i, part in enumerate(parts):
+        if part is None:
+            raise TypeError(
+                f"normalize() rejects None at position {i}; "
+                "convert Optional[str] to '' at the call site"
+            )
+        canon.append(unicodedata.normalize("NFC", part).strip())
     return _SEPARATOR.join(canon)
 
 
-def content_hash(*parts: str | None) -> str:
-    """Return ``sha256(normalize(*parts))`` as a 64-char lowercase hex digest."""
+def content_hash(*parts: str) -> str:
+    """Return ``sha256(normalize(*parts))`` as a 64-char lowercase hex digest.
+
+    Propagates :class:`TypeError` from :func:`normalize` unchanged when any
+    part is ``None``.
+    """
     return hashlib.sha256(normalize(*parts).encode("utf-8")).hexdigest()

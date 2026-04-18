@@ -58,7 +58,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content ON claims(content_hash, so
 CREATE TABLE IF NOT EXISTS decisions (
   decision_id    TEXT PRIMARY KEY, -- ulid
   user_id        TEXT NOT NULL,
-  target_kind    TEXT NOT NULL,    -- claim | memory | source
+  target_kind    TEXT NOT NULL CHECK (target_kind IN ('claim','memory','source')),
   target_id      TEXT NOT NULL,
   action         TEXT NOT NULL,    -- confirm | reject | archive | revoke
   actor          TEXT NOT NULL,    -- user | system | rule:<rule_name>

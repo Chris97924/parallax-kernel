@@ -10,7 +10,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Optional
 
+from parallax.obs.metrics import get_counter
 from parallax.sqlite_store import query
+
+_c_retrieve = get_counter("retrieve_total")
 
 __all__ = [
     "memories_by_user",
@@ -28,6 +31,7 @@ def _to_dicts(rows: list[sqlite3.Row]) -> list[dict]:
 def memories_by_user(
     conn: sqlite3.Connection, user_id: str, state: str | None = None
 ) -> list[dict]:
+    _c_retrieve.inc()
     if state is None:
         rows = query(conn, "SELECT * FROM memories WHERE user_id = ?", (user_id,))
     else:
@@ -42,6 +46,7 @@ def memories_by_user(
 def claims_by_user(
     conn: sqlite3.Connection, user_id: str, state: str | None = None
 ) -> list[dict]:
+    _c_retrieve.inc()
     if state is None:
         rows = query(conn, "SELECT * FROM claims WHERE user_id = ?", (user_id,))
     else:
