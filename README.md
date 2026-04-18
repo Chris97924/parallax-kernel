@@ -170,6 +170,41 @@ print(health("/tmp/my-parallax/db/parallax.db"))
 #  'last_error': None}
 ```
 
+## Phase 3: Shadow Write
+
+`parallax.extract` is an optional subpackage that extracts claims from
+free-form text via a pluggable `Provider` and dual-writes into the
+canonical store so divergence vs. the existing vault writer can be
+measured before any cut-over. Install with the extra:
+
+```bash
+pip install 'parallax-kernel[extract]'
+```
+
+Core install never imports `httpx` / `anthropic` — only the
+`[extract]` extra does. Wire the shadow behind an env flag so the
+primary vault writer stays unchanged:
+
+```python
+import os
+from parallax.extract.shadow import shadow_write
+
+if os.environ.get("PARALLAX_DUAL_WRITE") == "1":
+    claim_ids = shadow_write(
+        conn,
+        text,
+        provider=provider,
+        user_id=user_id,
+        source_id=source_id,
+    )
+    log.info("parallax_shadow_write", extra={"count": len(claim_ids)})
+write_to_vault(...)  # original primary path — unchanged
+```
+
+See [`docs/shadow-write.md`](./docs/shadow-write.md) for the log record
+format and the nightly `pytest -m llm_integration` procedure that hits
+OpenRouter for real.
+
 ## Testing
 
 ```bash
