@@ -4,8 +4,7 @@ Wraps :mod:`parallax.sqlite_store` with UPSERT semantics:
 
 * Every direct-input call (``source_id=None``) lazily creates a synthetic
   source row keyed ``direct:<user_id>``. This is what closes the UNIQUE
-  NULL-hole on ``claims.source_id`` (schema line reference: see
-  ``E:/Parallax/schema.sql``).
+  NULL-hole on ``claims.source_id``.
 * content_hash collisions are absorbed -- the existing row's id is returned
   and no duplicate is written. Re-ingestion is therefore safe and the
   "reaffirm" branch is silent in Phase-0 (see :func:`parallax.sqlite_store.reaffirm`).
@@ -14,10 +13,15 @@ Wraps :mod:`parallax.sqlite_store` with UPSERT semantics:
 from __future__ import annotations
 
 import sqlite3
+import time
 
 from ulid import ULID
 
+from parallax import telemetry
+from parallax.events import record_memory_reaffirmed
 from parallax.hashing import content_hash
+from parallax.obs.log import get_logger
+from parallax.obs.metrics import get_counter
 from parallax.sqlite_store import (
     Claim,
     Memory,
@@ -28,6 +32,12 @@ from parallax.sqlite_store import (
     now_iso,
     query,
 )
+
+_log = get_logger("parallax.ingest")
+_tlog = telemetry.get_logger("parallax.ingest.telemetry")
+_c_memory = get_counter("ingest_memory_total")
+_c_claim = get_counter("ingest_claim_total")
+_c_dedup = get_counter("dedup_hit_total")
 
 __all__ = [
     "ingest_memory",
@@ -78,32 +88,59 @@ def ingest_memory(
     the row that is actually persisted, never a ULID that was silently
     dropped by the IGNORE branch.
     """
-    if source_id is None:
-        source_id = _ensure_direct_source(conn, user_id)
+    start = time.perf_counter()
+    try:
+        if source_id is None:
+            source_id = _ensure_direct_source(conn, user_id)
 
-    ch = content_hash(title, summary, vault_path)
-    now = now_iso()
-    insert_memory(
-        conn,
-        Memory(
-            memory_id=_ulid(),
-            user_id=user_id,
-            source_id=source_id,
-            vault_path=vault_path,
-            title=title,
-            summary=summary,
-            content_hash=ch,
-            state="active",
-            created_at=now,
-            updated_at=now,
-        ),
-    )
-    row = query(
-        conn,
-        "SELECT memory_id FROM memories WHERE content_hash = ? AND user_id = ?",
-        (ch, user_id),
-    )
-    return row[0]["memory_id"]
+        # hashing.normalize rejects None explicitly (v0.1.2 boundary
+        # contract); Memory.title/summary remain Optional[str] at the
+        # storage layer, so we canonicalize None -> "" here before hashing.
+        title_for_hash = "" if title is None else title
+        summary_for_hash = "" if summary is None else summary
+        ch = content_hash(title_for_hash, summary_for_hash, vault_path)
+        now = now_iso()
+        new_id = _ulid()
+        insert_memory(
+            conn,
+            Memory(
+                memory_id=new_id,
+                user_id=user_id,
+                source_id=source_id,
+                vault_path=vault_path,
+                title=title,
+                summary=summary,
+                content_hash=ch,
+                state="active",
+                created_at=now,
+                updated_at=now,
+            ),
+        )
+        row = query(
+            conn,
+            "SELECT memory_id FROM memories WHERE content_hash = ? AND user_id = ?",
+            (ch, user_id),
+        )
+        persisted_id = row[0]["memory_id"]
+        _c_memory.inc()
+        telemetry.inc("ingested_total")
+        deduped = persisted_id != new_id
+        if deduped:
+            _c_dedup.inc()
+            telemetry.inc("dedup_hits_total")
+            telemetry.emit_dedup_hit(_tlog, kind="memory", user_id=user_id, memory_id=persisted_id)
+            record_memory_reaffirmed(conn, user_id=user_id, memory_id=persisted_id)
+        _log.info(
+            "ingest_memory",
+            extra={"event": "ingest_memory", "user_id": user_id, "memory_id": persisted_id,
+                   "deduped": deduped},
+        )
+        return persisted_id
+    except Exception as exc:
+        telemetry.emit_ingest_error(_tlog, kind="memory", user_id=user_id, error=str(exc))
+        raise
+    finally:
+        telemetry.observe_latency_ms((time.perf_counter() - start) * 1000.0)
 
 
 def ingest_claim(
@@ -121,30 +158,51 @@ def ingest_claim(
     Race-safe via INSERT OR IGNORE + re-select on the UNIQUE
     (content_hash, source_id) index. See :func:`ingest_memory` for rationale.
     """
-    if source_id is None:
-        source_id = _ensure_direct_source(conn, user_id)
+    start = time.perf_counter()
+    try:
+        if source_id is None:
+            source_id = _ensure_direct_source(conn, user_id)
 
-    ch = content_hash(subject, predicate, object_, source_id)
-    now = now_iso()
-    insert_claim(
-        conn,
-        Claim(
-            claim_id=_ulid(),
-            user_id=user_id,
-            subject=subject,
-            predicate=predicate,
-            object=object_,
-            source_id=source_id,
-            content_hash=ch,
-            confidence=confidence,
-            state="auto",
-            created_at=now,
-            updated_at=now,
-        ),
-    )
-    row = query(
-        conn,
-        "SELECT claim_id FROM claims WHERE content_hash = ? AND source_id = ?",
-        (ch, source_id),
-    )
-    return row[0]["claim_id"]
+        ch = content_hash(subject, predicate, object_, source_id)
+        now = now_iso()
+        new_id = _ulid()
+        insert_claim(
+            conn,
+            Claim(
+                claim_id=new_id,
+                user_id=user_id,
+                subject=subject,
+                predicate=predicate,
+                object=object_,
+                source_id=source_id,
+                content_hash=ch,
+                confidence=confidence,
+                state="auto",
+                created_at=now,
+                updated_at=now,
+            ),
+        )
+        row = query(
+            conn,
+            "SELECT claim_id FROM claims WHERE content_hash = ? AND source_id = ?",
+            (ch, source_id),
+        )
+        persisted_id = row[0]["claim_id"]
+        _c_claim.inc()
+        telemetry.inc("ingested_total")
+        deduped = persisted_id != new_id
+        if deduped:
+            _c_dedup.inc()
+            telemetry.inc("dedup_hits_total")
+            telemetry.emit_dedup_hit(_tlog, kind="claim", user_id=user_id, claim_id=persisted_id)
+        _log.info(
+            "ingest_claim",
+            extra={"event": "ingest_claim", "user_id": user_id, "claim_id": persisted_id,
+                   "deduped": deduped},
+        )
+        return persisted_id
+    except Exception as exc:
+        telemetry.emit_ingest_error(_tlog, kind="claim", user_id=user_id, error=str(exc))
+        raise
+    finally:
+        telemetry.observe_latency_ms((time.perf_counter() - start) * 1000.0)

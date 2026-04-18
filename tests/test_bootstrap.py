@@ -18,6 +18,8 @@ EXPECTED_TABLES = {
     "decisions",
     "events",
     "index_state",
+    "schema_migrations",
+    "claim_metadata",
 }
 
 
@@ -61,9 +63,19 @@ class TestBootstrap:
         assert cfg.db_path == (tmp_path / "db" / "parallax.db").resolve()
         assert cfg.vault_path == (tmp_path / "vault").resolve()
 
+    def test_bootstrap_runs_migrations(self, tmp_path: pathlib.Path) -> None:
+        cfg = bootstrap(tmp_path)
+        with sqlite3.connect(str(cfg.db_path)) as c:
+            rows = c.execute(
+                "SELECT version FROM schema_migrations ORDER BY version"
+            ).fetchall()
+        assert [r[0] for r in rows] == [1, 2, 3, 4, 5]
+
 
 class TestCLI:
-    def test_cli_entry_creates_db(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cli_entry_creates_db(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import bootstrap as bootstrap_mod
 
         monkeypatch.setattr("sys.argv", ["bootstrap.py", str(tmp_path)])
