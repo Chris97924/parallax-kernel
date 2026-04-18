@@ -3,6 +3,53 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-04-18
+
+### Added
+- **`parallax backup` / `parallax restore` CLI (Step 2 — low-risk, high ROI).**
+  New top-level console script `parallax` with two subcommands:
+  - `parallax backup <archive.tar.gz>` runs `PRAGMA wal_checkpoint(TRUNCATE)`
+    on the live SQLite store BEFORE copying (stale WAL pages would otherwise
+    leave the copied main-db file inconsistent), then writes a single
+    `.tar.gz` containing `db/parallax.db`, `vault/**`, and a `manifest.json`
+    (parallax_version, schema_version, created_at UTC, db_sha256, per-table
+    row_counts, DISTINCT content_hash counts for memories + claims).
+  - `parallax restore <archive.tar.gz> [--no-verify]` extracts into a
+    temp dir, moves any existing db + vault aside as `<path>.bak-<UTC ts>`
+    (never silently overwrites), installs the archive contents, and by
+    default re-computes the manifest against the restored db and raises
+    `RestoreVerificationError` on any drift (sha256 or row-count mismatch).
+- **`parallax/backup.py` + `parallax/restore.py` + `parallax/cli.py`.**
+  Zero non-stdlib dependencies: uses `tarfile` + `hashlib` + `argparse` +
+  `sqlite3` only, so backup/restore work from a minimal install.
+- **`[project.scripts]` entry point** — `parallax = "parallax.cli:main"`
+  in `pyproject.toml` registers the `parallax` console script under
+  `pip install -e .`.
+- **`tests/test_backup_restore.py` — 9 tests.** Including the headline
+  `test_backup_restore_round_trip_preserves_acceptance_sql`: seed a
+  populated db + vault, back up, delete the db AND wipe the vault dir,
+  restore, and assert the four Phase-2 acceptance SQL snapshots
+  (`01_canonical.sql` / `02_identity.sql` / `03_state_traceable.sql` /
+  `04_rebuild_identical.sql`) are byte-equivalent before and after.
+  Also covers: missing-db raises `FileNotFoundError`, pre-existing
+  archive raises `FileExistsError`, tampered archive tripped by the
+  verify step, pre-existing db moved aside as `.bak-*`, CLI round-trip
+  via `monkeypatch.setenv`, and `--no-verify` bypass.
+
+### Changed
+- **Safe tar extraction.** `parallax/restore.py` rejects archive entries
+  whose resolved paths escape the staging dir, as well as absolute paths
+  and non-regular/non-directory members — portable across Python 3.11+
+  without relying on `tarfile.data_filter` (3.12+).
+- **Version bump** `0.2.0` → `0.2.1` across `pyproject.toml` and
+  `parallax/__init__.__version__`.
+
+### Acceptance gate
+- `python -m pytest tests/` — **213 passed** (up from v0.2.0's 204).
+- Coverage total: **96.15%** (gate remains `--cov-fail-under=80`).
+- `ruff check parallax/backup.py parallax/restore.py parallax/cli.py
+  tests/test_backup_restore.py` — 0 errors.
+
 ## [0.2.0] - 2026-04-18
 
 ### Added
