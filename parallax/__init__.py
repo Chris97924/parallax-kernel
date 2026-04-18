@@ -44,7 +44,7 @@ from parallax.validators import (
     target_ref_exists,
 )
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 __all__ = [
     "ingest_memory",
