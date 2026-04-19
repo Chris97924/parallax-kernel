@@ -147,41 +147,64 @@ class TestNaiveTimestampLexCompare:
         )
         assert len(hits) == 1, "naive-ts row dropped by lex compare (BUG 4)"
 
-    def test_naive_iso_same_second_as_since_known_limitation(
-        self, conn: sqlite3.Connection
+    def test_naive_iso_same_second_as_since_matches_after_m0008(
+        self, tmp_path: pathlib.Path
     ) -> None:
-        """Pin the documented same-second naive-ts edge case (v0.5.0-pre3).
+        """v0.5.0-pre4: m0008 normalizes a legacy naive row so the
+        same-second ``since`` lex-compare succeeds.
 
-        A naive-ISO stored row at exactly the same second as ``since`` IS
-        dropped: the stored form ``'2024-06-15T12:00:00'`` (19 chars, no tz)
-        lex-compares LESS than the normalized since bound
-        ``'2024-06-15T12:00:00.000000+00:00'`` (32 chars). SQLite short-string
-        semantics flip `created_at >= since` to FALSE.
+        Simulates the realistic legacy-corpus flow: a DB is first built
+        at migration version 7, a naive-ts row is raw-inserted (how a
+        pre-``now_iso()`` corpus would arrive after a restore/replay),
+        and only then is ``migrate_to_latest`` called to apply m0008. The
+        migration rewrites the naive stored string to the 32-char
+        canonical form, so a subsequent ``since`` bound at the same
+        second now compares equal and the row is returned.
 
-        Impact envelope: pre-v0.5.0-pre1 rows written by a code path that
-        bypassed ``now_iso()`` AND landed at microsecond==0 AND the caller
-        uses ``since`` at that exact second. ``now_iso()`` itself always
-        emits the tz-aware micro-bearing form, so production rows from
-        v0.4.0+ are not affected.
-
-        This test pins the behaviour so the gap is not forgotten; a real
-        fix requires either a corpus rewrite of naive rows or a two-
-        predicate SQL rewrite of the window compare.
+        Previously (v0.5.0-pre3) this was pinned as a known limitation
+        asserting ``hits == []``. m0008 closes the gap permanently.
         """
-        _insert_event_at(conn, "2024-06-15T12:00:00")
-        hits = by_timeline(
-            conn,
-            user_id="u",
-            since="2024-06-15T12:00:00Z",
-            until="2024-06-15T13:00:00Z",
+        from parallax.migrations import (
+            MIGRATIONS,
+            _manual_tx,
+            ensure_schema_migrations_table,
         )
-        # KNOWN LIMITATION (documented above): the same-second naive row is
-        # excluded. When the fix lands, flip this to `assert len(hits) == 1`.
-        assert hits == [], (
-            "naive-ts same-second exclusion regressed — either the bug was "
-            "fixed (flip this assertion) or a different code path now "
-            "normalizes stored created_at on write"
-        )
+        from parallax.sqlite_store import now_iso
+
+        db = tmp_path / "legacy.db"
+        c = connect(db)
+        try:
+            ensure_schema_migrations_table(c)
+            for mig in sorted(MIGRATIONS, key=lambda m: m.version):
+                if mig.version > 7:
+                    continue
+                with _manual_tx(c):
+                    mig.up(c)
+                    c.execute(
+                        "INSERT INTO schema_migrations(version, name, "
+                        "applied_at) VALUES (?, ?, ?)",
+                        (mig.version, mig.name, now_iso()),
+                    )
+            _insert_event_at(c, "2024-06-15T12:00:00")
+
+            from parallax.migrations import migrate_to_latest
+
+            migrate_to_latest(c)  # applies m0008, normalizes the naive row
+
+            hits = by_timeline(
+                c,
+                user_id="u",
+                since="2024-06-15T12:00:00Z",
+                until="2024-06-15T13:00:00Z",
+            )
+            assert len(hits) == 1, (
+                "same-second naive-ts row was dropped; m0008 corpus "
+                "normalization regressed — either the migration didn't "
+                "rewrite events.created_at, or the reader-side compare "
+                "flipped"
+            )
+        finally:
+            c.close()
 
 
 class TestCreatedAtIsNormalizedOnWrite:

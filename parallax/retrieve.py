@@ -226,13 +226,6 @@ def _iso_normalize(ts: str, *, kind: str) -> str:
     ``_iso_normalize(until_str)`` would apply ``since`` semantics to an
     ``until`` bound and drop boundary events. Requiring an explicit kind
     makes that misuse impossible.
-
-    Known limitation (v0.5.0-pre1): naive stored timestamps (no tz, no
-    microsecond) at the SAME SECOND as ``since`` are excluded under SQLite
-    lex-compare — the 19-char stored form sorts below the 32-char normalized
-    bound. This affects only pre-``now_iso()`` rows written by a code path
-    that bypassed ``sqlite_store.now_iso``. See
-    ``tests/test_by_timeline_microsecond_boundary.py::test_naive_iso_same_second_as_since_known_limitation``.
     """
     if kind not in ("since", "until"):
         raise ValueError(f"kind must be 'since' or 'until'; got {kind!r}")
