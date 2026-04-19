@@ -459,9 +459,13 @@ def by_bug_fix(
     for tok in _FIX_TOKENS:
         like = f"%{tok}%"
         claim_params.extend([like, like, like])
+    # ORDER BY is mandatory — without it SQLite returns heap-order rows and
+    # LIMIT ? silently drops high-confidence claims at rowid > limit (BUG 2,
+    # v0.5.0-pre1). claim_id ASC is the deterministic tiebreak.
     claim_rows = query(
         conn,
-        f"SELECT * FROM claims WHERE user_id = ? AND ({claim_or}) LIMIT ?",
+        f"SELECT * FROM claims WHERE user_id = ? AND ({claim_or}) "
+        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?",
         (user_id, *claim_params, limit),
     )
     seen: set[str] = set()
@@ -528,10 +532,12 @@ def by_entity(
     hits: list[RetrievalHit] = []
 
     prefix_like = f"{_like_escape(subject.lower())}%"
+    # ORDER BY is mandatory — see by_bug_fix claim SELECT above (BUG 2).
     claim_rows = query(
         conn,
         "SELECT * FROM claims WHERE user_id = ? AND "
-        "(subject = ? OR LOWER(subject) LIKE ? ESCAPE '\\') LIMIT ?",
+        "(subject = ? OR LOWER(subject) LIKE ? ESCAPE '\\') "
+        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?",
         (user_id, subject, prefix_like, limit),
     )
     for r in _to_dicts(claim_rows):
