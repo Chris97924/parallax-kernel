@@ -170,7 +170,8 @@ def ingest_claim(
     """UPSERT a claim row. Returns the persisted claim_id.
 
     Race-safe via INSERT OR IGNORE + re-select on the UNIQUE
-    (content_hash, source_id) index. See :func:`ingest_memory` for rationale.
+    (content_hash, source_id, user_id) index (ADR-005, v0.5.0-pre1). See
+    :func:`ingest_memory` for rationale.
 
     ``state`` must be a registered initial state in
     :data:`parallax.transitions.CLAIM_TRANSITIONS` (defensive validation at

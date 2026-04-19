@@ -115,6 +115,13 @@ def memory_by_content_hash(
 def claim_by_content_hash(
     conn: sqlite3.Connection, content_hash: str
 ) -> dict | None:
+    """Lookup a claim by its pre-computed content_hash.
+
+    Post-ADR-005 (v0.5.0-pre1) the hash is user-scoped:
+    ``sha256(normalize(subject || predicate || object || source_id || user_id))``.
+    Callers constructing the hash externally must pass all five parts; a
+    4-part hash built with the pre-v0.5.0-pre1 formula will silently miss.
+    """
     rows = query(
         conn, "SELECT * FROM claims WHERE content_hash = ? LIMIT 1", (content_hash,)
     )

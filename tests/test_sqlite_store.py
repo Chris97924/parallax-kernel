@@ -120,7 +120,7 @@ class TestInsertAndDedup:
     def test_insert_claim_dedup_via_content_hash(
         self, conn: sqlite3.Connection, seeded_source: Source
     ) -> None:
-        ch = content_hash("chris", "likes", "coffee", seeded_source.source_id)
+        ch = content_hash("chris", "likes", "coffee", seeded_source.source_id, "chris")
         claim = Claim(
             claim_id="01HXCLAIM0000000000000001",
             user_id="chris",
@@ -207,7 +207,7 @@ class TestReaffirmSurface:
             predicate="y",
             object="z",
             source_id=seeded_source.source_id,
-            content_hash=content_hash("x", "y", "z", seeded_source.source_id),
+            content_hash=content_hash("x", "y", "z", seeded_source.source_id, "chris"),
             confidence=None,
             state="auto",
             created_at=_now(),
