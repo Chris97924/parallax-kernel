@@ -46,7 +46,7 @@ def _raw_insert_claim(
     source_id: str,
     confidence: float | None,
 ) -> None:
-    ch = content_hash(subject, predicate, object_, source_id)
+    ch = content_hash(subject, predicate, object_, source_id, user_id)
     ts = now_iso()
     conn.execute(
         """INSERT INTO claims(claim_id, user_id, subject, predicate, object,

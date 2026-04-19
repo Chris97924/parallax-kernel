@@ -2,7 +2,9 @@
 
 Schema contract (E:/Parallax/schema.sql):
     memories.content_hash = sha256(normalize(title || summary || vault_path))
-    claims.content_hash   = sha256(normalize(subject || predicate || object || source_id))
+    claims.content_hash   = sha256(normalize(subject || predicate || object
+                                             || source_id || user_id))
+                            # ADR-005, v0.5.0-pre1 — hash is user-scoped
 
 Both call sites funnel through this single module so dedup semantics stay
 identical across writers, migrations, and verifiers.

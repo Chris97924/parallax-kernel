@@ -221,7 +221,7 @@ class TestBackfillCreationEvents:
     ) -> Claim:
         _seed_source(conn, "direct:u", "u")
         now = now_iso()
-        ch = content_hash(subj, "y", "z", "direct:u")
+        ch = content_hash(subj, "y", "z", "direct:u", "u")
         cla = Claim(
             claim_id=f"cla-{subj}",
             user_id="u",
