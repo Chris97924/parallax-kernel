@@ -254,6 +254,38 @@ def _pick_retrieve_kind(query: str, kind: str | None) -> str:
     return "recent" if not query else "entity"
 
 
+def _format_kv(d: dict) -> str:
+    """Compact ``k=v, k=v`` rendering with stable sort for debug output."""
+    return ", ".join(f"{k}={v!r}" for k, v in sorted(d.items()))
+
+
+def _print_trace_header(trace) -> None:
+    """Print the per-query trace block for `parallax inspect retrieve --explain`.
+
+    Kept separate from hit rendering so the zero-hit path still sees the
+    header — that's the whole point of the --explain rail for LongMemEval
+    debug. Reads the frozen :class:`RetrievalTrace` produced by
+    :func:`parallax.retrieve.explain_retrieve`.
+    """
+    print(f"== trace(kind={trace.kind}) ==")
+    print(f"params: {_format_kv(trace.params)}")
+    if trace.normalized_params:
+        print(f"normalized: {_format_kv(trace.normalized_params)}")
+    for sql in trace.sql_fragments:
+        print(f"sql: {sql}")
+    if trace.stages:
+        print("stages:")
+        for s in trace.stages:
+            detail = f" {s.detail}" if s.detail else ""
+            print(
+                f"  {s.name}: {s.candidates_in}->{s.candidates_out}{detail}"
+            )
+    if trace.notes:
+        print("notes:")
+        for n in trace.notes:
+            print(f"  - {n}")
+
+
 def _cmd_inspect_retrieve(
     *,
     user_id: str,
@@ -274,31 +306,51 @@ def _cmd_inspect_retrieve(
             file=sys.stderr,
         )
         return _EXIT_USER_ERROR
+    if resolved_kind == "timeline" and (since is None or until is None):
+        print("timeline kind requires --since and --until", file=sys.stderr)
+        return _EXIT_USER_ERROR
+
     conn = _open_conn()
     try:
-        if resolved_kind == "recent":
-            hits = R.recent_context(conn, user_id=user_id, limit=limit)
-        elif resolved_kind == "file":
-            hits = R.by_file(conn, user_id=user_id, path=query, limit=limit)
-        elif resolved_kind == "decision":
-            hits = R.by_decision(conn, user_id=user_id, limit=limit)
-        elif resolved_kind == "bug":
-            hits = R.by_bug_fix(conn, user_id=user_id, limit=limit)
-        elif resolved_kind == "entity":
-            hits = R.by_entity(conn, user_id=user_id, subject=query, limit=limit)
-        elif resolved_kind == "timeline":
-            if since is None or until is None:
-                print("timeline kind requires --since and --until", file=sys.stderr)
-                return _EXIT_USER_ERROR
+        if explain:
             try:
-                hits = R.by_timeline(
-                    conn, user_id=user_id, since=since, until=until, limit=limit
+                trace = R.explain_retrieve(
+                    conn,
+                    kind=resolved_kind,
+                    user_id=user_id,
+                    query_text=query,
+                    limit=limit,
+                    since=since,
+                    until=until,
                 )
             except ValueError as exc:
-                print(f"bad timeline window: {exc}", file=sys.stderr)
+                print(f"bad retrieval args: {exc}", file=sys.stderr)
                 return _EXIT_USER_ERROR
-        else:  # pragma: no cover — guarded by _RETRIEVE_KINDS check
-            return _EXIT_USER_ERROR
+            _print_trace_header(trace)
+            hits = list(trace.hits)
+        else:
+            if resolved_kind == "recent":
+                hits = R.recent_context(conn, user_id=user_id, limit=limit)
+            elif resolved_kind == "file":
+                hits = R.by_file(conn, user_id=user_id, path=query, limit=limit)
+            elif resolved_kind == "decision":
+                hits = R.by_decision(conn, user_id=user_id, limit=limit)
+            elif resolved_kind == "bug":
+                hits = R.by_bug_fix(conn, user_id=user_id, limit=limit)
+            elif resolved_kind == "entity":
+                hits = R.by_entity(conn, user_id=user_id, subject=query, limit=limit)
+            else:  # timeline — since/until pre-checked above
+                try:
+                    hits = R.by_timeline(
+                        conn,
+                        user_id=user_id,
+                        since=since,
+                        until=until,
+                        limit=limit,
+                    )
+                except ValueError as exc:
+                    print(f"bad timeline window: {exc}", file=sys.stderr)
+                    return _EXIT_USER_ERROR
 
         if not hits:
             print("(no hits)")

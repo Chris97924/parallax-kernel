@@ -123,3 +123,60 @@ class TestInspectRetrieve:
         assert rc == 0
         out = capsys.readouterr().out
         assert "file.edit" in out or "tool.edit" in out
+
+
+class TestInspectRetrieveExplainTrace:
+    """v0.5.0-pre5 — --explain prints a per-query trace header before hits.
+
+    The header is the debug rail for LongMemEval — when a query misses, the
+    operator sees normalized params, funnel stages, SQL fragments, and
+    near-miss sample rows without opening sqlite3 by hand.
+    """
+
+    def test_zero_hit_entity_prints_trace_header_and_near_miss(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        rc = main(
+            ["inspect", "retrieve", "NoSuchSubject", "--kind", "entity", "--explain"]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        # Header block
+        assert "trace(kind=entity)" in out
+        assert "params:" in out
+        assert "stages:" in out
+        # Zero-hit sentinel still emitted
+        assert "(no hits)" in out
+        # Near-miss sampler fired because corpus had 1 claim (ProjectX) but
+        # not 'NoSuchSubject'.
+        assert "near_miss(entity)" in out
+
+    def test_timeline_explain_shows_normalized_since_until(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        rc = main(
+            [
+                "inspect",
+                "retrieve",
+                "--kind",
+                "timeline",
+                "--since",
+                "2099-01-01T00:00:00Z",
+                "--until",
+                "2099-01-02T00:00:00Z",
+                "--explain",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "trace(kind=timeline)" in out
+        assert "normalized:" in out
+        assert "since_norm" in out and "until_norm" in out
+
+    def test_no_explain_has_no_trace_header(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        rc = main(["inspect", "retrieve", "--kind", "recent"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "trace(kind=" not in out

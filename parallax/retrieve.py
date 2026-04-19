@@ -29,6 +29,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as _dt
 import sqlite3
+from typing import Any
 
 from parallax.obs.metrics import get_counter
 from parallax.sqlite_store import query
@@ -51,6 +52,10 @@ __all__ = [
     "by_timeline",
     "by_entity",
     "FILE_EVENT_TYPES",
+    # v0.5.0-pre5 trace view
+    "RetrievalTrace",
+    "RetrievalTraceStage",
+    "explain_retrieve",
 ]
 
 
@@ -170,6 +175,117 @@ class RetrievalHit:
         # L3: include full row; fall back to evidence-only when full is None
         base["full"] = self.full if self.full is not None else self.evidence
         return base
+
+
+# ----- v0.5.0-pre5 trace view ----------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class RetrievalTraceStage:
+    """A single stage of the retrieval funnel, e.g. 'user_scope' → 'filter'.
+
+    ``candidates_in`` and ``candidates_out`` let the operator see where rows
+    were dropped (e.g. 50 in → 2 out across the LIKE filter).
+    """
+
+    name: str
+    candidates_in: int
+    candidates_out: int
+    detail: str
+
+
+@dataclasses.dataclass(frozen=True)
+class RetrievalTrace:
+    """Per-query debug trace — surfaces WHY a retrieval hit (or missed).
+
+    Produced by :func:`explain_retrieve` and by the private ``_TraceBuilder``
+    threaded through each v0.3.0 retrieve function when a trace is requested.
+
+    Fields:
+
+    * ``kind`` — retrieval kind (``'recent'``/``'file'``/``'decision'``/
+      ``'bug'``/``'entity'``/``'timeline'``).
+    * ``params`` — inputs as seen by the dispatcher (user_id, query, limit,
+      since, until, …). None values are preserved so the operator can see
+      an absent since/until.
+    * ``normalized_params`` — transformed inputs — e.g. ``since_norm`` /
+      ``until_norm`` for timeline, ``resolved_session_id`` for recent_context.
+    * ``sql_fragments`` — primary SQL strings actually executed (omitting
+      sqlite_store internals).
+    * ``stages`` — funnel stages, recorded in execution order.
+    * ``notes`` — free-form diagnostic text (fallback reasons, near-miss
+      samples, empty-path skips).
+    * ``hits`` — the retrieval result as a frozen tuple so the trace can be
+      passed around without accidental mutation.
+    """
+
+    kind: str
+    params: dict[str, Any]
+    normalized_params: dict[str, Any]
+    sql_fragments: tuple[str, ...]
+    stages: tuple[RetrievalTraceStage, ...]
+    notes: tuple[str, ...]
+    hits: tuple[RetrievalHit, ...]
+
+
+class _TraceBuilder:
+    """Mutable recorder used internally by each retrieve function.
+
+    Intentionally private: callers interact only with the frozen
+    :class:`RetrievalTrace` returned by :meth:`freeze`. When a retrieve
+    function receives ``_trace=None`` (the default) it never touches a
+    builder, so instrumentation is zero-cost for non-debug paths.
+    """
+
+    def __init__(self, *, kind: str, params: dict[str, Any]) -> None:
+        self._kind = kind
+        self._params = dict(params)
+        self._normalized: dict[str, Any] = {}
+        self._sql: list[str] = []
+        self._stages: list[RetrievalTraceStage] = []
+        self._notes: list[str] = []
+
+    def sql(self, fragment: str) -> None:
+        self._sql.append(fragment)
+
+    def stage(
+        self, name: str, *, candidates_in: int, candidates_out: int, detail: str = ""
+    ) -> None:
+        self._stages.append(
+            RetrievalTraceStage(
+                name=name,
+                candidates_in=candidates_in,
+                candidates_out=candidates_out,
+                detail=detail,
+            )
+        )
+
+    def note(self, text: str) -> None:
+        self._notes.append(text)
+
+    def set_normalized(self, d: dict[str, Any]) -> None:
+        self._normalized.update(d)
+
+    def freeze(self, *, hits: tuple[RetrievalHit, ...] | list[RetrievalHit]) -> RetrievalTrace:
+        return RetrievalTrace(
+            kind=self._kind,
+            params=dict(self._params),
+            normalized_params=dict(self._normalized),
+            sql_fragments=tuple(self._sql),
+            stages=tuple(self._stages),
+            notes=tuple(self._notes),
+            hits=tuple(hits),
+        )
+
+
+def _count_events_for_user(conn: sqlite3.Connection, user_id: str) -> int:
+    rows = query(conn, "SELECT COUNT(*) AS n FROM events WHERE user_id = ?", (user_id,))
+    return int(rows[0]["n"]) if rows else 0
+
+
+def _count_claims_for_user(conn: sqlite3.Connection, user_id: str) -> int:
+    rows = query(conn, "SELECT COUNT(*) AS n FROM claims WHERE user_id = ?", (user_id,))
+    return int(rows[0]["n"]) if rows else 0
 
 
 # ----- v0.3.0 retrieval functions ------------------------------------------
@@ -298,13 +414,18 @@ def recent_context(
     user_id: str,
     session_id: str | None = None,
     limit: int = 20,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Most recent events for a session.
 
     When ``session_id`` is None, the scan is scoped to the latest session (the
     session_id of the newest ``session.start`` row, if any; otherwise the
     newest event regardless of session). Score = recency (1/(1+age_h/24)).
+
+    ``_trace`` is a private debug hook used by :func:`explain_retrieve`; when
+    None, the function is byte-identical to its pre-v0.5.0-pre5 behaviour.
     """
+    explicit_session = session_id is not None
     if session_id is None:
         row = query(
             conn,
@@ -314,20 +435,19 @@ def recent_context(
         )
         session_id = row[0]["session_id"] if row else None
 
+    fell_back = session_id is None and not explicit_session
     if session_id is None:
-        rows = query(
-            conn,
-            "SELECT * FROM events WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
+        sql = (
+            "SELECT * FROM events WHERE user_id = ? ORDER BY created_at DESC LIMIT ?"
         )
+        rows = query(conn, sql, (user_id, limit))
         reason_tmpl = "recent_context fallback (no session.start found); newest events for user"
     else:
-        rows = query(
-            conn,
+        sql = (
             "SELECT * FROM events WHERE user_id = ? AND session_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (user_id, session_id, limit),
+            "ORDER BY created_at DESC LIMIT ?"
         )
+        rows = query(conn, sql, (user_id, session_id, limit))
         reason_tmpl = f"recent_context match on session_id={session_id!r}"
 
     hits: list[RetrievalHit] = []
@@ -340,11 +460,40 @@ def recent_context(
             )
         )
     hits.sort(key=lambda h: h.score, reverse=True)
+
+    if _trace is not None:
+        total = _count_events_for_user(conn, user_id)
+        _trace.set_normalized({"resolved_session_id": session_id})
+        _trace.sql(sql)
+        _trace.stage(
+            "user_scope",
+            candidates_in=total,
+            candidates_out=total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "session_scope",
+            candidates_in=total,
+            candidates_out=len(hits),
+            detail=f"session_id={session_id!r} limit={limit}",
+        )
+        _trace.stage(
+            "final", candidates_in=len(hits), candidates_out=len(hits), detail=""
+        )
+        if fell_back:
+            _trace.note(
+                "no session.start event found — fell back to newest events for user"
+            )
     return hits
 
 
 def by_file(
-    conn: sqlite3.Connection, *, user_id: str, path: str, limit: int = 20
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    path: str,
+    limit: int = 20,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Events whose payload references a given file path.
 
@@ -354,15 +503,22 @@ def by_file(
     ``utils_v2.py`` match literally.
     """
     if not path:
+        if _trace is not None:
+            _trace.note("empty path — skipped by_file scan")
+            _trace.stage(
+                "input_guard",
+                candidates_in=0,
+                candidates_out=0,
+                detail="path is empty",
+            )
         return []
     like = f"%{_like_escape(path)}%"
     placeholders = ",".join("?" * len(FILE_EVENT_TYPES))
-    rows = query(
-        conn,
+    sql = (
         f"SELECT * FROM events WHERE user_id = ? AND event_type IN ({placeholders}) "
-        "AND payload_json LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
-        (user_id, *FILE_EVENT_TYPES, like, limit),
+        "AND payload_json LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?"
     )
+    rows = query(conn, sql, (user_id, *FILE_EVENT_TYPES, like, limit))
     hits: list[RetrievalHit] = []
     for r in _to_dicts(rows):
         hits.append(
@@ -376,11 +532,52 @@ def by_file(
                 },
             )
         )
+
+    if _trace is not None:
+        total = _count_events_for_user(conn, user_id)
+        # Split the filter into event-type and payload-LIKE stages so the
+        # operator can tell whether the corpus had zero file events at all
+        # (type filter dropped everything) or had file events but none
+        # referenced the requested path (payload filter dropped everything).
+        type_rows = query(
+            conn,
+            f"SELECT COUNT(*) AS n FROM events WHERE user_id = ? "
+            f"AND event_type IN ({placeholders})",
+            (user_id, *FILE_EVENT_TYPES),
+        )
+        type_count = int(type_rows[0]["n"]) if type_rows else 0
+        _trace.set_normalized({"like_pattern": like, "event_types": list(FILE_EVENT_TYPES)})
+        _trace.sql(sql)
+        _trace.stage(
+            "user_scope",
+            candidates_in=total,
+            candidates_out=total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "event_type_filter",
+            candidates_in=total,
+            candidates_out=type_count,
+            detail=f"event_type IN {FILE_EVENT_TYPES}",
+        )
+        _trace.stage(
+            "payload_filter",
+            candidates_in=type_count,
+            candidates_out=len(hits),
+            detail=f"payload_json LIKE {like!r}",
+        )
+        _trace.stage(
+            "final", candidates_in=len(hits), candidates_out=len(hits), detail=""
+        )
     return hits
 
 
 def by_decision(
-    conn: sqlite3.Connection, *, user_id: str, limit: int = 20
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    limit: int = 20,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Claim state-changes + decision-family events.
 
@@ -388,13 +585,12 @@ def by_decision(
     the claim's ``subject predicate object`` so injected reminders read as
     "P is ok" rather than the opaque event id.
     """
-    rows = query(
-        conn,
+    sql = (
         "SELECT * FROM events WHERE user_id = ? "
         "AND (event_type = 'claim.state_changed' OR event_type LIKE 'decision.%') "
-        "ORDER BY created_at DESC LIMIT ?",
-        (user_id, limit),
+        "ORDER BY created_at DESC LIMIT ?"
     )
+    rows = query(conn, sql, (user_id, limit))
     dicts = _to_dicts(rows)
     # Batch-fetch all referenced claims in one query to avoid N+1.
     claim_ids = [
@@ -430,23 +626,45 @@ def by_decision(
         if spo:
             hit = dataclasses.replace(hit, title=f"{spo} — {hit.title}")
         hits.append(hit)
+
+    if _trace is not None:
+        total = _count_events_for_user(conn, user_id)
+        _trace.sql(sql)
+        _trace.stage(
+            "user_scope",
+            candidates_in=total,
+            candidates_out=total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "decision_filter",
+            candidates_in=total,
+            candidates_out=len(hits),
+            detail="event_type = 'claim.state_changed' OR LIKE 'decision.%'",
+        )
+        _trace.stage(
+            "final", candidates_in=len(hits), candidates_out=len(hits), detail=""
+        )
     return hits
 
 
 def by_bug_fix(
-    conn: sqlite3.Connection, *, user_id: str, limit: int = 20
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    limit: int = 20,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Events + claims whose text matches fix/bug tokens."""
     hits: list[RetrievalHit] = []
 
     like_clauses = " OR ".join(["payload_json LIKE ?"] * len(_FIX_TOKENS))
     like_params = tuple(f"%{tok}%" for tok in _FIX_TOKENS)
-    erows = query(
-        conn,
+    event_sql = (
         f"SELECT * FROM events WHERE user_id = ? AND ({like_clauses}) "
-        "ORDER BY created_at DESC LIMIT ?",
-        (user_id, *like_params, limit),
+        "ORDER BY created_at DESC LIMIT ?"
     )
+    erows = query(conn, event_sql, (user_id, *like_params, limit))
     for r in _to_dicts(erows):
         hits.append(
             _event_to_hit(
@@ -471,12 +689,11 @@ def by_bug_fix(
     # ORDER BY is mandatory — without it SQLite returns heap-order rows and
     # LIMIT ? silently drops high-confidence claims at rowid > limit (BUG 2,
     # v0.5.0-pre1). claim_id ASC is the deterministic tiebreak.
-    claim_rows = query(
-        conn,
+    claim_sql = (
         f"SELECT * FROM claims WHERE user_id = ? AND ({claim_or}) "
-        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?",
-        (user_id, *claim_params, limit),
+        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?"
     )
+    claim_rows = query(conn, claim_sql, (user_id, *claim_params, limit))
     seen: set[str] = set()
     for r in _to_dicts(claim_rows):
         cid = r.get("claim_id", "")
@@ -492,7 +709,47 @@ def by_bug_fix(
         )
 
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits[:limit]
+    hits = hits[:limit]
+
+    if _trace is not None:
+        events_total = _count_events_for_user(conn, user_id)
+        claims_total = _count_claims_for_user(conn, user_id)
+        event_matches = len(erows)
+        claim_matches = len(claim_rows)
+        _trace.set_normalized({"fix_tokens": list(_FIX_TOKENS)})
+        _trace.sql(event_sql)
+        _trace.sql(claim_sql)
+        _trace.stage(
+            "user_scope_events",
+            candidates_in=events_total,
+            candidates_out=events_total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "payload_token_filter",
+            candidates_in=events_total,
+            candidates_out=event_matches,
+            detail=f"events.payload_json LIKE %<tok>% for tok in {list(_FIX_TOKENS)}",
+        )
+        _trace.stage(
+            "user_scope_claims",
+            candidates_in=claims_total,
+            candidates_out=claims_total,
+            detail=f"claims rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "spo_token_filter",
+            candidates_in=claims_total,
+            candidates_out=claim_matches,
+            detail=f"claims.(subject|predicate|object) LIKE %<tok>% for tok in {list(_FIX_TOKENS)}",
+        )
+        _trace.stage(
+            "final",
+            candidates_in=event_matches + claim_matches,
+            candidates_out=len(hits),
+            detail=f"merge + sort by score DESC; limit={limit}",
+        )
+    return hits
 
 
 def by_timeline(
@@ -502,6 +759,7 @@ def by_timeline(
     since: str,
     until: str,
     limit: int = 50,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Events in a timestamp window [since, until] ordered ascending."""
     try:
@@ -513,12 +771,11 @@ def by_timeline(
         raise ValueError(
             f"by_timeline: since ({since}) must be <= until ({until})"
         )
-    rows = query(
-        conn,
+    sql = (
         "SELECT * FROM events WHERE user_id = ? AND created_at >= ? AND created_at <= ? "
-        "ORDER BY created_at ASC LIMIT ?",
-        (user_id, since_norm, until_norm, limit),
+        "ORDER BY created_at ASC LIMIT ?"
     )
+    rows = query(conn, sql, (user_id, since_norm, until_norm, limit))
     hits: list[RetrievalHit] = []
     for r in _to_dicts(rows):
         hits.append(
@@ -528,27 +785,59 @@ def by_timeline(
                 score_components={"recency": _recency_score(r.get("created_at", ""))},
             )
         )
+
+    if _trace is not None:
+        total = _count_events_for_user(conn, user_id)
+        _trace.set_normalized({"since_norm": since_norm, "until_norm": until_norm})
+        _trace.sql(sql)
+        _trace.stage(
+            "user_scope",
+            candidates_in=total,
+            candidates_out=total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "time_window",
+            candidates_in=total,
+            candidates_out=len(hits),
+            detail=f"created_at >= {since_norm!r} AND created_at <= {until_norm!r}",
+        )
+        _trace.stage(
+            "final", candidates_in=len(hits), candidates_out=len(hits), detail=""
+        )
     return hits
 
 
 def by_entity(
-    conn: sqlite3.Connection, *, user_id: str, subject: str, limit: int = 20
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    subject: str,
+    limit: int = 20,
+    _trace: _TraceBuilder | None = None,
 ) -> list[RetrievalHit]:
     """Claims whose subject matches (exact + case-insensitive prefix) + events
     whose payload references the subject."""
     if not subject:
+        if _trace is not None:
+            _trace.note("empty subject — skipped by_entity scan")
+            _trace.stage(
+                "input_guard",
+                candidates_in=0,
+                candidates_out=0,
+                detail="subject is empty",
+            )
         return []
     hits: list[RetrievalHit] = []
 
     prefix_like = f"{_like_escape(subject.lower())}%"
     # ORDER BY is mandatory — see by_bug_fix claim SELECT above (BUG 2).
-    claim_rows = query(
-        conn,
+    claim_sql = (
         "SELECT * FROM claims WHERE user_id = ? AND "
         "(subject = ? OR LOWER(subject) LIKE ? ESCAPE '\\') "
-        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?",
-        (user_id, subject, prefix_like, limit),
+        "ORDER BY confidence DESC, updated_at DESC, claim_id ASC LIMIT ?"
     )
+    claim_rows = query(conn, claim_sql, (user_id, subject, prefix_like, limit))
     for r in _to_dicts(claim_rows):
         exact = r.get("subject") == subject
         hits.append(
@@ -563,12 +852,12 @@ def by_entity(
             )
         )
 
-    event_rows = query(
-        conn,
+    event_sql = (
         "SELECT * FROM events WHERE user_id = ? AND payload_json LIKE ? ESCAPE '\\' "
-        "ORDER BY created_at DESC LIMIT ?",
-        (user_id, f"%{_like_escape(subject)}%", limit),
+        "ORDER BY created_at DESC LIMIT ?"
     )
+    event_like = f"%{_like_escape(subject)}%"
+    event_rows = query(conn, event_sql, (user_id, event_like, limit))
     for r in _to_dicts(event_rows):
         hits.append(
             _event_to_hit(
@@ -582,4 +871,225 @@ def by_entity(
         )
 
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits[:limit]
+    hits = hits[:limit]
+
+    if _trace is not None:
+        events_total = _count_events_for_user(conn, user_id)
+        claims_total = _count_claims_for_user(conn, user_id)
+        claim_matches = len(claim_rows)
+        event_matches = len(event_rows)
+        _trace.set_normalized(
+            {"subject_lower": subject.lower(), "prefix_like": prefix_like}
+        )
+        _trace.sql(claim_sql)
+        _trace.sql(event_sql)
+        _trace.stage(
+            "user_scope_claims",
+            candidates_in=claims_total,
+            candidates_out=claims_total,
+            detail=f"claims rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "subject_filter",
+            candidates_in=claims_total,
+            candidates_out=claim_matches,
+            detail=f"subject = {subject!r} OR LOWER(subject) LIKE {prefix_like!r}",
+        )
+        _trace.stage(
+            "user_scope_events",
+            candidates_in=events_total,
+            candidates_out=events_total,
+            detail=f"events rows for user_id={user_id!r}",
+        )
+        _trace.stage(
+            "payload_filter",
+            candidates_in=events_total,
+            candidates_out=event_matches,
+            detail=f"events.payload_json LIKE {event_like!r}",
+        )
+        _trace.stage(
+            "final",
+            candidates_in=claim_matches + event_matches,
+            candidates_out=len(hits),
+            detail=f"merge + sort by score DESC; limit={limit}",
+        )
+    return hits
+
+
+# ----- v0.5.0-pre5 explain_retrieve dispatcher -----------------------------
+
+
+_RETRIEVE_KINDS = ("recent", "file", "decision", "bug", "entity", "timeline")
+
+
+_RECENT_CLAIMS_SQL = (
+    "SELECT claim_id, subject, predicate, object FROM claims "
+    "WHERE user_id = ? ORDER BY updated_at DESC, claim_id ASC LIMIT 3"
+)
+
+
+def _fmt_claim_note(kind: str, label: str, row: Any) -> str:
+    """Format one near-miss note line for a claim row."""
+    spo = f"{row['subject']} {row['predicate']} {row['object']}".strip()
+    return f"near_miss({kind}) {label}: sample={row['claim_id']}: {spo}"
+
+
+def _fmt_file_note(label: str, row: Any) -> str:
+    """Format one near-miss note line for a file-event row.
+
+    Payload is truncated to 80 chars and newlines flattened so each note
+    occupies a single line in the CLI trace output.
+    """
+    payload = (row["payload_json"] or "")[:80].replace("\n", " ")
+    return f"near_miss(file) {label}: sample={row['event_id']}: {payload}"
+
+
+def _near_miss_notes(
+    conn: sqlite3.Connection, *, kind: str, user_id: str, query_text: str = ""
+) -> list[str]:
+    """Return up to 3 diagnostic sample-row notes when a retrieval missed.
+
+    The goal is to let an operator distinguish the two common miss modes —
+    "filter too strict" vs. "DB is empty for this user" vs. "DB has rows but
+    none relate to the query" — without opening sqlite3 by hand. Called only
+    when ``hits`` is empty.
+
+    For ``kind='entity'`` / ``kind='file'`` we first try a permissive LIKE
+    fuzzy match against ``query_text`` (case-insensitive, substring). If that
+    yields rows, they are labelled ``near_miss(<kind>) fuzzy``. Only when the
+    fuzzy pass also returns nothing do we fall back to the 3 most-recent rows
+    labelled ``near_miss(<kind>) recent`` — so "sample" always means "the DB
+    has these rows but they didn't match", never silently masquerades as
+    "nearby matches".
+    """
+    notes: list[str] = []
+    if kind == "entity":
+        if _count_claims_for_user(conn, user_id) == 0:
+            return [f"near_miss(entity): corpus empty for user_id={user_id!r}"]
+        if query_text:
+            fuzzy = f"%{_like_escape(query_text.lower())}%"
+            rows = query(
+                conn,
+                "SELECT claim_id, subject, predicate, object FROM claims "
+                "WHERE user_id = ? AND (LOWER(subject) LIKE ? ESCAPE '\\' "
+                "OR LOWER(object) LIKE ? ESCAPE '\\') "
+                "ORDER BY updated_at DESC, claim_id ASC LIMIT 3",
+                (user_id, fuzzy, fuzzy),
+            )
+            notes = [_fmt_claim_note("entity", "fuzzy", r) for r in rows]
+            if notes:
+                return notes
+        rows = query(conn, _RECENT_CLAIMS_SQL, (user_id,))
+        return [_fmt_claim_note("entity", "recent", r) for r in rows]
+
+    if kind == "file":
+        placeholders = ",".join("?" * len(FILE_EVENT_TYPES))
+        base = (
+            f"SELECT event_id, payload_json FROM events WHERE user_id = ? "
+            f"AND event_type IN ({placeholders}) "
+        )
+        if query_text:
+            fuzzy = f"%{_like_escape(query_text.lower())}%"
+            rows = query(
+                conn,
+                base + "AND LOWER(payload_json) LIKE ? ESCAPE '\\' "
+                "ORDER BY created_at DESC LIMIT 3",
+                (user_id, *FILE_EVENT_TYPES, fuzzy),
+            )
+            notes = [_fmt_file_note("fuzzy", r) for r in rows]
+            if notes:
+                return notes
+        rows = query(
+            conn,
+            base + "ORDER BY created_at DESC LIMIT 3",
+            (user_id, *FILE_EVENT_TYPES),
+        )
+        if not rows:
+            return [f"near_miss(file): corpus empty for user_id={user_id!r}"]
+        return [_fmt_file_note("recent", r) for r in rows]
+
+    if kind == "bug":
+        if _count_claims_for_user(conn, user_id) == 0:
+            return [f"near_miss(bug): corpus empty for user_id={user_id!r}"]
+        rows = query(conn, _RECENT_CLAIMS_SQL, (user_id,))
+        return [_fmt_claim_note("bug", "recent", r) for r in rows]
+
+    return notes
+
+
+def explain_retrieve(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    user_id: str,
+    query_text: str = "",
+    limit: int = 10,
+    since: str | None = None,
+    until: str | None = None,
+) -> RetrievalTrace:
+    """Dispatch to the v0.3.0 retrieval API and return a populated trace.
+
+    ``kind`` ∈ {'recent','file','decision','bug','entity','timeline'}.
+
+    * ``query_text`` feeds ``path`` for ``file`` and ``subject`` for
+      ``entity``. Renamed from ``query`` to avoid shadowing the module-level
+      ``query`` helper imported from :mod:`parallax.sqlite_store`.
+    * ``since`` / ``until`` are required for ``timeline`` and ignored for
+      other kinds (they're still echoed into ``params``).
+    * For ``kind`` ∈ {'entity','file','bug'}, when the call produces zero
+      hits a ``near_miss`` note is attached — for ``entity`` / ``file`` this
+      is a permissive LIKE fuzzy match against the query text; only if that
+      also yields nothing do we fall back to the 3 most-recent rows (so the
+      operator can still distinguish "empty corpus" from "non-matching
+      corpus").
+    """
+    if kind not in _RETRIEVE_KINDS:
+        raise ValueError(
+            f"explain_retrieve: unknown kind {kind!r}; expected one of {list(_RETRIEVE_KINDS)}"
+        )
+
+    params: dict[str, Any] = {
+        "kind": kind,
+        "user_id": user_id,
+        "query": query_text,
+        "limit": limit,
+        "since": since,
+        "until": until,
+    }
+    builder = _TraceBuilder(kind=kind, params=params)
+
+    if kind == "recent":
+        hits = recent_context(conn, user_id=user_id, limit=limit, _trace=builder)
+    elif kind == "file":
+        hits = by_file(
+            conn, user_id=user_id, path=query_text, limit=limit, _trace=builder
+        )
+    elif kind == "decision":
+        hits = by_decision(conn, user_id=user_id, limit=limit, _trace=builder)
+    elif kind == "bug":
+        hits = by_bug_fix(conn, user_id=user_id, limit=limit, _trace=builder)
+    elif kind == "entity":
+        hits = by_entity(
+            conn, user_id=user_id, subject=query_text, limit=limit, _trace=builder
+        )
+    else:  # timeline
+        if since is None or until is None:
+            raise ValueError(
+                "explain_retrieve(kind='timeline'): since and until are required"
+            )
+        hits = by_timeline(
+            conn,
+            user_id=user_id,
+            since=since,
+            until=until,
+            limit=limit,
+            _trace=builder,
+        )
+
+    if not hits and kind in ("entity", "file", "bug"):
+        for note in _near_miss_notes(
+            conn, kind=kind, user_id=user_id, query_text=query_text
+        ):
+            builder.note(note)
+
+    return builder.freeze(hits=hits)
