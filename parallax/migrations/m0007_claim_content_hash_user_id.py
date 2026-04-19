@@ -26,7 +26,8 @@ from parallax.hashing import content_hash
 STATEMENTS: list[str] = [
     "DROP INDEX IF EXISTS uniq_claims_content",
     "UPDATE claims SET content_hash = sha256(subject||predicate||object||source_id||user_id)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content ON claims(content_hash, source_id, user_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content "
+    "ON claims(content_hash, source_id, user_id)",
 ]
 
 
