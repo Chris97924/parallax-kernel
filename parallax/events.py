@@ -142,9 +142,20 @@ def record_claim_state_changed(
     claim_id: str,
     from_state: str,
     to_state: str,
+    updated_at: str | None = None,
     actor: str = "system",
 ) -> str:
-    """Emit a ``claim.state_changed`` event capturing the from/to transition."""
+    """Emit a ``claim.state_changed`` event capturing the from/to transition.
+
+    ``updated_at`` is the ISO-8601 timestamp the corresponding
+    ``UPDATE claims SET state=?, updated_at=?`` applied. Carrying it in the
+    event payload lets :func:`parallax.replay.replay_events` reconstruct the
+    row bit-for-bit; omitting it keeps backward compatibility with events
+    written before v0.4.1 (replay falls back to state-only UPDATE).
+    """
+    payload: dict[str, Any] = {"from": from_state, "to": to_state}
+    if updated_at is not None:
+        payload["updated_at"] = updated_at
     return record_event(
         conn,
         user_id=user_id,
@@ -152,5 +163,5 @@ def record_claim_state_changed(
         event_type="claim.state_changed",
         target_kind="claim",
         target_id=claim_id,
-        payload={"from": from_state, "to": to_state},
+        payload=payload,
     )

@@ -6,7 +6,7 @@ exposes a small, intentionally narrow surface:
     insert_source / insert_memory / insert_claim   -- dedup via content_hash
     insert_event                                   -- append-only
     query                                          -- read via parameterized SQL
-    reaffirm                                       -- Phase-0 noop placeholder
+    reaffirm                                       -- emit <kind>.reaffirmed event
 
 The events table is write-only from this layer: there is NO update_event and
 NO delete_event export. Enforcing the contract here keeps the append-only
@@ -188,12 +188,45 @@ def query(
 # ----- Placeholder ----------------------------------------------------------
 
 
-def reaffirm(conn: sqlite3.Connection, *args: Any, **kwargs: Any) -> None:
-    """Phase-0 noop.
+_VALID_REAFFIRM_KINDS = ("memory", "claim")
 
-    Real reaffirm semantics (emit a ``*.reaffirmed`` event when an UPSERT
-    collapses onto an existing row) land in Phase-1 once the events append
-    trigger is in place. Kept in the public surface so callers can already
-    wire the hook without import churn later.
+
+def reaffirm(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    kind: str,
+    entity_id: str,
+    actor: str = "system",
+) -> str:
+    """Emit a ``<kind>.reaffirmed`` event and return its event_id.
+
+    v0.4.0 typed surface. ``kind`` must be one of
+    :data:`_VALID_REAFFIRM_KINDS` (``"memory"`` or ``"claim"``); any other
+    value raises :class:`ValueError` listing the valid kinds.
+
+    For ``kind='memory'`` this delegates to
+    :func:`parallax.events.record_memory_reaffirmed` so ``memory.reaffirmed``
+    stays the single stable public name. For ``kind='claim'`` it emits a
+    ``claim.reaffirmed`` event via :func:`parallax.events.record_event`.
     """
-    return None
+    if kind not in _VALID_REAFFIRM_KINDS:
+        raise ValueError(
+            f"invalid reaffirm kind {kind!r}; "
+            f"expected one of {list(_VALID_REAFFIRM_KINDS)}"
+        )
+    from parallax.events import record_event, record_memory_reaffirmed
+
+    if kind == "memory":
+        return record_memory_reaffirmed(
+            conn, user_id=user_id, memory_id=entity_id, actor=actor
+        )
+    return record_event(
+        conn,
+        user_id=user_id,
+        actor=actor,
+        event_type="claim.reaffirmed",
+        target_kind="claim",
+        target_id=entity_id,
+        payload={"claim_id": entity_id},
+    )

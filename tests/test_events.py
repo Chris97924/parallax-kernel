@@ -138,3 +138,98 @@ class TestIngestEmitsReaffirmed:
             ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
         rows = _events(conn, "memory.reaffirmed")
         assert len(rows) == 2
+
+
+class TestCreationEvents:
+    """v0.4.0: ingest emits memory.created / claim.created on first write."""
+
+    def test_first_memory_ingest_emits_one_created(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        mid = ingest_memory(
+            conn, user_id="u", title="t", summary="s", vault_path="v.md"
+        )
+        rows = _events(conn, "memory.created")
+        assert len(rows) == 1
+        assert rows[0]["target_kind"] == "memory"
+        assert rows[0]["target_id"] == mid
+        assert _events(conn, "memory.reaffirmed") == []
+
+    def test_repeat_memory_ingest_emits_no_extra_created(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
+        ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
+        assert len(_events(conn, "memory.created")) == 1
+        assert len(_events(conn, "memory.reaffirmed")) == 1
+
+    def test_first_claim_ingest_emits_one_created(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        cid = ingest_claim(
+            conn, user_id="u", subject="x", predicate="y", object_="z"
+        )
+        rows = _events(conn, "claim.created")
+        assert len(rows) == 1
+        assert rows[0]["target_kind"] == "claim"
+        assert rows[0]["target_id"] == cid
+
+    def test_repeat_claim_ingest_emits_no_extra_created(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        ingest_claim(conn, user_id="u", subject="x", predicate="y", object_="z")
+        ingest_claim(conn, user_id="u", subject="x", predicate="y", object_="z")
+        assert len(_events(conn, "claim.created")) == 1
+
+    def test_memory_created_payload_carries_full_row(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        mid = ingest_memory(
+            conn, user_id="u", title="t", summary="s", vault_path="v.md"
+        )
+        row = _events(conn, "memory.created")[0]
+        payload = json.loads(row["payload_json"])
+        expected_keys = {
+            "memory_id",
+            "user_id",
+            "source_id",
+            "vault_path",
+            "title",
+            "summary",
+            "content_hash",
+            "state",
+            "created_at",
+            "updated_at",
+        }
+        assert set(payload) == expected_keys
+        assert payload["memory_id"] == mid
+        assert payload["user_id"] == "u"
+        assert payload["vault_path"] == "v.md"
+        assert payload["state"] == "active"
+
+    def test_claim_created_payload_carries_full_row(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        cid = ingest_claim(
+            conn, user_id="u", subject="x", predicate="y", object_="z"
+        )
+        row = _events(conn, "claim.created")[0]
+        payload = json.loads(row["payload_json"])
+        expected_keys = {
+            "claim_id",
+            "user_id",
+            "subject",
+            "predicate",
+            "object",
+            "source_id",
+            "content_hash",
+            "confidence",
+            "state",
+            "created_at",
+            "updated_at",
+        }
+        assert set(payload) == expected_keys
+        assert payload["claim_id"] == cid
+        assert payload["subject"] == "x"
+        assert payload["predicate"] == "y"
+        assert payload["object"] == "z"

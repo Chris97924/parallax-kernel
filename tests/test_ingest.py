@@ -82,25 +82,28 @@ class TestIngestMemoryUpsert:
         assert rows[0]["n"] == 2
 
     def test_none_title_and_summary_accepted(self, conn: sqlite3.Connection) -> None:
-        # v0.1.2: hashing.normalize rejects None, but ingest_memory must still
-        # accept Optional[str] for title/summary (schema allows NULL).
-        # Conversion happens at the call site before content_hash().
+        # v0.4.0: hashing.normalize encodes None with a distinct sentinel.
+        # ingest_memory accepts Optional[str] for title/summary (schema allows
+        # NULL) and idempotence still holds for the all-None case.
         mid = ingest_memory(
             conn, user_id="chris", title=None, summary=None, vault_path="v.md"
         )
         assert isinstance(mid, str) and len(mid) > 0
-        # Idempotent for the all-None case too.
+        # Idempotent for the all-None case.
         mid2 = ingest_memory(
             conn, user_id="chris", title=None, summary=None, vault_path="v.md"
         )
         assert mid == mid2
         rows = query(conn, "SELECT COUNT(*) AS n FROM memories", ())
         assert rows[0]["n"] == 1
-        # None==='' equivalence at the ingest boundary.
+        # v0.4.0 contract: None and "" are DISTINCT at the hash boundary —
+        # title='' is a different memory from title=None (same vault_path).
         mid3 = ingest_memory(
             conn, user_id="chris", title="", summary="", vault_path="v.md"
         )
-        assert mid == mid3
+        assert mid != mid3
+        rows2 = query(conn, "SELECT COUNT(*) AS n FROM memories", ())
+        assert rows2[0]["n"] == 2
 
 
 class TestIngestClaimUpsert:
