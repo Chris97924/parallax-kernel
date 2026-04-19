@@ -70,7 +70,7 @@ class TestMigrationPlanShape:
                 )
         plan = migration_plan(c)
         assert plan.applied == (1, 2, 3)
-        assert [s.version for s in plan.pending] == [4, 5, 6, 7]
+        assert [s.version for s in plan.pending] == [4, 5, 6, 7, 8]
         assert plan.current_version == 3
         c.close()
 
@@ -89,7 +89,7 @@ class TestRowImpactEstimates:
         # A fresh plan on a fully-migrated DB has zero pending — roll back
         # v7 so we have one pending migration to inspect.
         from parallax.migrations import migrate_down_to
-        migrate_down_to(c, 6)
+        migrate_down_to(c, 7)
         plan = migration_plan(c)
         assert len(plan.pending) == 1
         step = plan.pending[0]
