@@ -119,6 +119,11 @@ class TestSilenceBrokenPipe:
         _silence_broken_pipe()
 
     def test_tolerates_oserror_from_dup2(self) -> None:
+        # NOTE: do NOT use monkeypatch here. pytest's capture fixture calls
+        # os.dup2 during its own teardown (file-descriptor capture mode), so a
+        # lingering fake dup2 — even if monkeypatch eventually reverts it —
+        # fires during capture teardown and reports as a spurious test failure.
+        # Manual save/restore inside the test body restores before teardown.
         real_open = cli_mod.os.open
         real_dup2 = cli_mod.os.dup2
         real_close = cli_mod.os.close
@@ -233,10 +238,10 @@ class TestStderrBrokenPipe:
             raise RuntimeError("boom")
 
         broken = _BrokenStderr()
-        silence_calls = {"n": 0}
+        silence_calls: list[object] = []
 
         def _fake_silence(stream: object | None = None) -> None:
-            silence_calls["n"] += 1
+            silence_calls.append(stream)
 
         monkeypatch.setattr(cli_mod, "_dispatch", _boom)
         monkeypatch.setattr(cli_mod.sys, "stderr", broken)
@@ -244,7 +249,8 @@ class TestStderrBrokenPipe:
         rc = main([])
         assert rc == _EXIT_USER_ERROR
         assert broken.write_called
-        assert silence_calls["n"] == 1
+        assert len(silence_calls) == 1
+        assert silence_calls[0] is broken
 
     def test_broken_pipe_silences_stderr_fd(
         self, monkeypatch: pytest.MonkeyPatch
