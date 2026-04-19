@@ -20,6 +20,7 @@ Exit codes
 * 2 -- argparse usage error (unknown/missing subcommand)
 * 3 -- restore verification mismatch
         (:class:`parallax.restore.RestoreVerificationError`).
+* 130 -- interrupted by user (Ctrl+C).
 """
 
 from __future__ import annotations
@@ -36,10 +37,56 @@ from parallax.restore import RestoreVerificationError, restore_backup
 
 __all__ = ["main", "build_parser"]
 
+
+def _ensure_utf8_streams() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so CJK output survives legacy codepages.
+
+    On Windows cmd.exe the default ANSI codepage is often cp950 (Traditional
+    Chinese) or cp936 (Simplified). Any print() that contains a CJK character
+    then crashes with UnicodeEncodeError long before the user sees output.
+    Setting PYTHONIOENCODING in the parent environment only covers subprocesses
+    the parent spawns — a human typing ``parallax inspect ...`` directly in cmd
+    still hits the crash. Flipping the streams at entry makes the CLI robust
+    regardless of parent shell configuration.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        current = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if current == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, LookupError, ValueError, OSError):
+            continue
+
+
 _EXIT_OK = 0
 _EXIT_USER_ERROR = 1
 _EXIT_USAGE = 2
 _EXIT_VERIFY_FAIL = 3
+_EXIT_INTERRUPTED = 130
+
+
+def _silence_broken_pipe() -> None:
+    """Redirect stdout to os.devnull after a BrokenPipeError.
+
+    When the CLI is piped into ``head`` / ``less`` and the reader closes the
+    pipe mid-print, Python raises BrokenPipeError — and then its atexit flush
+    tries again and re-raises a second traceback during shutdown. Dup'ing
+    devnull onto stdout's fd neutralises the atexit flush so the process can
+    exit cleanly. Tolerant of streams without a real fileno (pytest capture,
+    io.StringIO) since those only appear in tests.
+    """
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(devnull, sys.stdout.fileno())
+        finally:
+            os.close(devnull)
+    except (OSError, ValueError, AttributeError):
+        pass
 
 _RETRIEVE_KINDS = {"recent", "file", "decision", "bug", "entity", "timeline"}
 
@@ -342,7 +389,7 @@ def _cmd_inspect_inject(*, user_id: str, session_id: str | None, max_hits: int) 
 # ----- dispatcher -----------------------------------------------------------
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _dispatch(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.command == "backup":
@@ -380,6 +427,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _EXIT_USAGE
     parser.print_help(sys.stderr)
     return _EXIT_USAGE
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    _ensure_utf8_streams()
+    try:
+        return _dispatch(argv)
+    except KeyboardInterrupt:
+        return _EXIT_INTERRUPTED
+    except BrokenPipeError:
+        _silence_broken_pipe()
+        return _EXIT_OK
+    except Exception as exc:  # noqa: BLE001 — last-resort CLI guard
+        try:
+            print(f"parallax: {exc}", file=sys.stderr)
+        except BrokenPipeError:
+            _silence_broken_pipe()
+        return _EXIT_USER_ERROR
 
 
 if __name__ == "__main__":
