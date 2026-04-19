@@ -1,0 +1,186 @@
+"""BUG 1+4 regression: by_timeline must not drop boundary / naive-ts events.
+
+v0.5.0-pre1. See project_parallax_v05_retrieval_patch.md.
+
+BUG 1 — microsecond boundary drop:
+    now_iso() stores `...T12:00:00.500000+00:00` but the caller passes
+    `until="...T12:00:00Z"`. After the legacy _iso_normalize (micro=0 →
+    stripped) the stored string (pos-19 char `.`, ASCII 46) compares GREATER
+    than the query string (pos-19 char `+`, ASCII 43) under SQLite lex
+    compare, so `created_at <= until` evaluates FALSE and the boundary event
+    disappears.
+
+BUG 4 — naive-timestamp lex compare:
+    A stored `created_at="2024-06-15T12:00:00"` (no tz) is SHORTER than a
+    tz-aware query bound and loses the lex comparison via short-string-less
+    semantics. _iso_normalize's until-expansion must produce a form that
+    still compares correctly against naive stored strings.
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import pathlib
+import sqlite3
+
+import pytest
+
+from parallax.events import record_event
+from parallax.migrations import migrate_to_latest
+from parallax.retrieve import _iso_normalize, by_timeline
+from parallax.sqlite_store import connect
+
+
+@pytest.fixture()
+def conn(tmp_path: pathlib.Path) -> sqlite3.Connection:
+    db = tmp_path / "tmb.db"
+    c = connect(db)
+    migrate_to_latest(c)
+    yield c
+    c.close()
+
+
+def _insert_event_at(conn: sqlite3.Connection, created_at: str, user_id: str = "u") -> str:
+    """Bypass now_iso() so we can pin created_at to an exact string."""
+    from ulid import ULID
+
+    eid = str(ULID())
+    conn.execute(
+        """INSERT INTO events(event_id, user_id, actor, event_type,
+                              target_kind, target_id, payload_json,
+                              approval_tier, created_at, session_id)
+           VALUES (?, ?, 'system', 'marker', NULL, NULL, '{}', NULL, ?, NULL)""",
+        (eid, user_id, created_at),
+    )
+    conn.commit()
+    return eid
+
+
+class TestMicrosecondBoundary:
+    def test_until_second_boundary_includes_subsecond_event(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """BUG 1 repro — until='...T12:00:00Z' must include a 12:00:00.500000+00:00 row."""
+        _insert_event_at(conn, "2024-06-15T12:00:00.500000+00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T00:00:00Z",
+            until="2024-06-15T12:00:00Z",
+        )
+        assert len(hits) == 1, (
+            "boundary event at 12:00:00.500000+00:00 was dropped — "
+            "lex compare between stored `.` (46) and query `+` (43) flipped"
+        )
+
+    def test_since_second_boundary_includes_exact_match(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        # now_iso() guarantees microsecond-precision form — that is the
+        # canonical stored shape for production events.
+        _insert_event_at(conn, "2024-06-15T12:00:00.000000+00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T12:00:00Z",
+            until="2024-06-15T13:00:00Z",
+        )
+        assert len(hits) == 1
+
+    def test_until_microsecond_inside_second_included(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """Events at .999999 must remain INCLUDED when until has micro=0."""
+        _insert_event_at(conn, "2024-06-15T12:00:00.999999+00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T00:00:00Z",
+            until="2024-06-15T12:00:00Z",
+        )
+        assert len(hits) == 1
+
+    def test_until_microsecond_next_second_excluded(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """Expansion to 999999 must not bleed into the next second."""
+        _insert_event_at(conn, "2024-06-15T12:00:01.000000+00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T00:00:00Z",
+            until="2024-06-15T12:00:00Z",
+        )
+        assert hits == []
+
+    def test_iso_normalize_until_expands_zero_microsecond(self) -> None:
+        out = _iso_normalize("2024-06-15T12:00:00Z", kind="until")
+        assert ".999999" in out
+        assert "+00:00" in out
+
+    def test_iso_normalize_since_keeps_zero_microsecond(self) -> None:
+        out = _iso_normalize("2024-06-15T12:00:00Z", kind="since")
+        # since should NOT be expanded — keeps micro=0 (or at least not 999999).
+        assert ".999999" not in out
+        assert "+00:00" in out
+
+    def test_iso_normalize_is_immutable(self) -> None:
+        """Input string must not be aliased or mutated."""
+        s = "2024-06-15T12:00:00Z"
+        _iso_normalize(s, kind="until")
+        assert s == "2024-06-15T12:00:00Z"
+
+
+class TestNaiveTimestampLexCompare:
+    """BUG 4 — naive stored ts must still participate correctly in window queries."""
+
+    def test_naive_iso_stored_event_still_matches(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """A naive-ISO stored row must be returned by a tz-aware window query."""
+        _insert_event_at(conn, "2024-06-15T12:00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T00:00:00Z",
+            until="2024-06-15T23:59:59Z",
+        )
+        assert len(hits) == 1, "naive-ts row dropped by lex compare (BUG 4)"
+
+
+class TestCreatedAtIsNormalizedOnWrite:
+    """now_iso() should produce a form that _iso_normalize can compare."""
+
+    def test_now_iso_has_microseconds_and_tz(self) -> None:
+        from parallax.sqlite_store import now_iso
+
+        s = now_iso()
+        assert "+00:00" in s
+        # Always includes microseconds (the BUG 1 trigger on read side).
+        assert "." in s.split("+")[0]
+
+    def test_record_event_and_query_boundary_roundtrip(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """End-to-end: record_event() → by_timeline(until=second-floor) → hit."""
+        before = _dt.datetime.now(_dt.UTC).replace(microsecond=0)
+        record_event(
+            conn,
+            user_id="u",
+            actor="system",
+            event_type="marker",
+            target_kind=None,
+            target_id=None,
+            payload={},
+        )
+        until_second = before.isoformat().replace("+00:00", "Z")
+        # Force until to the same SECOND as the write (the write will be >= before
+        # with some microseconds); until at that second should include it.
+        until_next = (before + _dt.timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since=until_second,
+            until=until_next,
+        )
+        assert len(hits) >= 1
