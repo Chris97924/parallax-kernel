@@ -69,20 +69,21 @@ _EXIT_VERIFY_FAIL = 3
 _EXIT_INTERRUPTED = 130
 
 
-def _silence_broken_pipe() -> None:
-    """Redirect stdout to os.devnull after a BrokenPipeError.
+def _silence_broken_pipe(stream: object | None = None) -> None:
+    """Redirect the target stream (default stdout) to os.devnull after a BrokenPipeError.
 
     When the CLI is piped into ``head`` / ``less`` and the reader closes the
     pipe mid-print, Python raises BrokenPipeError — and then its atexit flush
     tries again and re-raises a second traceback during shutdown. Dup'ing
-    devnull onto stdout's fd neutralises the atexit flush so the process can
-    exit cleanly. Tolerant of streams without a real fileno (pytest capture,
-    io.StringIO) since those only appear in tests.
+    devnull onto the target stream's fd neutralises the atexit flush so the
+    process can exit cleanly. Tolerant of streams without a real fileno
+    (pytest capture, io.StringIO) since those only appear in tests.
     """
+    target = sys.stdout if stream is None else stream
     try:
         devnull = os.open(os.devnull, os.O_WRONLY)
         try:
-            os.dup2(devnull, sys.stdout.fileno())
+            os.dup2(devnull, target.fileno())
         finally:
             os.close(devnull)
     except (OSError, ValueError, AttributeError):
@@ -430,8 +431,8 @@ def _dispatch(argv: Sequence[str] | None) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    _ensure_utf8_streams()
     try:
+        _ensure_utf8_streams()
         return _dispatch(argv)
     except KeyboardInterrupt:
         return _EXIT_INTERRUPTED
@@ -442,7 +443,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             print(f"parallax: {exc}", file=sys.stderr)
         except BrokenPipeError:
-            _silence_broken_pipe()
+            _silence_broken_pipe(sys.stderr)
         return _EXIT_USER_ERROR
 
 

@@ -68,6 +68,14 @@ class TestEnsureUtf8Streams:
         monkeypatch.setattr(sys, "stdout", _Hostile())
         _ensure_utf8_streams()
 
+    def test_reconfigures_stderr_too(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stdout_rec = io.TextIOWrapper(io.BytesIO(), encoding="cp950")
+        stderr_rec = io.TextIOWrapper(io.BytesIO(), encoding="cp950")
+        monkeypatch.setattr(sys, "stdout", stdout_rec)
+        monkeypatch.setattr(sys, "stderr", stderr_rec)
+        _ensure_utf8_streams()
+        assert stderr_rec.encoding.lower() == "utf-8"
+
 
 class TestMainOnCp950Stdout:
     """Pins the test to a cp1252 stream so CJK is guaranteed unencodable —
