@@ -103,13 +103,11 @@ framework lands on the same index + comment.
 
 ## References
 
-- `E:/Parallax/parallax/hashing.py` — canonical hash formula (variadic).
-- `E:/Parallax/parallax/ingest.py:ingest_claim` — 5-part call site.
-- `E:/Parallax/schema.sql` — updated `claims` comment + UNIQUE index.
-- `E:/Parallax/parallax/migrations/m0007_claim_content_hash_user_id.py`
-  — rehash + index swap.
-- `E:/Parallax/tests/test_content_hash_user_id_scope.py` — cross-user
-  regression + migration rehash verification.
+- `parallax/hashing.py` — canonical hash formula (variadic).
+- `parallax/ingest.py:ingest_claim` — 5-part call site.
+- `schema.sql` — updated `claims` comment + UNIQUE index.
+- `parallax/migrations/m0007_claim_content_hash_user_id.py` — rehash + index swap.
+- `tests/test_content_hash_user_id_scope.py` — cross-user regression + migration rehash verification.
 - [ADR-001](ADR-001-content-hash-ssot.md) — parent decision on
   `content_hash` construction.
 - [ADR-004](ADR-004-claim-dedup-includes-source-id.md) — 4-part formula
