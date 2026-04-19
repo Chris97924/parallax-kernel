@@ -23,6 +23,13 @@ from parallax.hashing import content_hash
 # impact estimation. The UPDATE sweep is represented as a single
 # "UPDATE claims" entry because the Python loop issues N individual
 # updates whose count equals the row count reported by the estimator.
+#
+# NOTE: The ``sha256(...)`` call in the UPDATE literal is illustrative
+# only — SQLite has no native ``sha256`` function. The real rehash is
+# performed row-by-row in Python by ``up()`` below, using
+# ``parallax.hashing.content_hash``. Only ``migration_plan`` ever sees
+# this string, and only to classify the statement as "UPDATE claims"
+# for impact estimation.
 STATEMENTS: list[str] = [
     "DROP INDEX IF EXISTS uniq_claims_content",
     "UPDATE claims SET content_hash = sha256(subject||predicate||object||source_id||user_id)",
@@ -33,15 +40,24 @@ STATEMENTS: list[str] = [
 
 def up(conn: sqlite3.Connection) -> None:
     conn.execute("DROP INDEX IF EXISTS uniq_claims_content")
-    rows = conn.execute(
-        "SELECT claim_id, subject, predicate, object, source_id, user_id "
-        "FROM claims"
-    ).fetchall()
+    # Use sqlite3.Row factory for named access; resilient to column
+    # reordering and easier to audit than positional ``r[1]..r[5]``.
+    prev_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT claim_id, subject, predicate, object, source_id, user_id "
+            "FROM claims"
+        ).fetchall()
+    finally:
+        conn.row_factory = prev_factory
     for r in rows:
-        new_hash = content_hash(r[1], r[2], r[3], r[4], r[5])
+        new_hash = content_hash(
+            r["subject"], r["predicate"], r["object"], r["source_id"], r["user_id"]
+        )
         conn.execute(
             "UPDATE claims SET content_hash = ? WHERE claim_id = ?",
-            (new_hash, r[0]),
+            (new_hash, r["claim_id"]),
         )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content "
@@ -51,14 +67,21 @@ def up(conn: sqlite3.Connection) -> None:
 
 def down(conn: sqlite3.Connection) -> None:
     conn.execute("DROP INDEX IF EXISTS uniq_claims_content")
-    rows = conn.execute(
-        "SELECT claim_id, subject, predicate, object, source_id FROM claims"
-    ).fetchall()
+    prev_factory = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT claim_id, subject, predicate, object, source_id FROM claims"
+        ).fetchall()
+    finally:
+        conn.row_factory = prev_factory
     for r in rows:
-        old_hash = content_hash(r[1], r[2], r[3], r[4])
+        old_hash = content_hash(
+            r["subject"], r["predicate"], r["object"], r["source_id"]
+        )
         conn.execute(
             "UPDATE claims SET content_hash = ? WHERE claim_id = ?",
-            (old_hash, r[0]),
+            (old_hash, r["claim_id"]),
         )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content "

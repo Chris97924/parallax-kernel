@@ -147,6 +147,42 @@ class TestNaiveTimestampLexCompare:
         )
         assert len(hits) == 1, "naive-ts row dropped by lex compare (BUG 4)"
 
+    def test_naive_iso_same_second_as_since_known_limitation(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        """Pin the documented same-second naive-ts edge case (v0.5.0-pre3).
+
+        A naive-ISO stored row at exactly the same second as ``since`` IS
+        dropped: the stored form ``'2024-06-15T12:00:00'`` (19 chars, no tz)
+        lex-compares LESS than the normalized since bound
+        ``'2024-06-15T12:00:00.000000+00:00'`` (32 chars). SQLite short-string
+        semantics flip `created_at >= since` to FALSE.
+
+        Impact envelope: pre-v0.5.0-pre1 rows written by a code path that
+        bypassed ``now_iso()`` AND landed at microsecond==0 AND the caller
+        uses ``since`` at that exact second. ``now_iso()`` itself always
+        emits the tz-aware micro-bearing form, so production rows from
+        v0.4.0+ are not affected.
+
+        This test pins the behaviour so the gap is not forgotten; a real
+        fix requires either a corpus rewrite of naive rows or a two-
+        predicate SQL rewrite of the window compare.
+        """
+        _insert_event_at(conn, "2024-06-15T12:00:00")
+        hits = by_timeline(
+            conn,
+            user_id="u",
+            since="2024-06-15T12:00:00Z",
+            until="2024-06-15T13:00:00Z",
+        )
+        # KNOWN LIMITATION (documented above): the same-second naive row is
+        # excluded. When the fix lands, flip this to `assert len(hits) == 1`.
+        assert hits == [], (
+            "naive-ts same-second exclusion regressed — either the bug was "
+            "fixed (flip this assertion) or a different code path now "
+            "normalizes stored created_at on write"
+        )
+
 
 class TestCreatedAtIsNormalizedOnWrite:
     """now_iso() should produce a form that _iso_normalize can compare."""
