@@ -91,7 +91,7 @@ class TestContentHashLookup:
         assert memory_by_content_hash(seeded, "deadbeef") is None
 
     def test_claim_by_hash_hit_and_miss(self, seeded: sqlite3.Connection) -> None:
-        h = content_hash("chris", "likes", "coffee", "direct:chris")
+        h = content_hash("chris", "likes", "coffee", "direct:chris", "chris")
         hit = claim_by_content_hash(seeded, h)
         assert hit is not None
         assert hit["object"] == "coffee"

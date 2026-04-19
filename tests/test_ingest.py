@@ -120,7 +120,7 @@ class TestIngestClaimUpsert:
 
     def test_content_hash_matches_schema_formula(self, conn: sqlite3.Connection) -> None:
         cid = ingest_claim(conn, user_id="chris", subject="chris", predicate="likes", object_="coffee")
-        expected = content_hash("chris", "likes", "coffee", "direct:chris")
+        expected = content_hash("chris", "likes", "coffee", "direct:chris", "chris")
         row = query(conn, "SELECT content_hash FROM claims WHERE claim_id = ?", (cid,))[0]
         assert row["content_hash"] == expected
 

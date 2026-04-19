@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS claims (
   predicate    TEXT NOT NULL,
   object       TEXT NOT NULL,
   source_id    TEXT NOT NULL REFERENCES sources(source_id),  -- closes UNIQUE NULL-hole; direct input uses synthetic 'direct:<user_id>' source
-  content_hash TEXT NOT NULL,      -- sha256(normalize(subject||predicate||object||source_id))
+  content_hash TEXT NOT NULL,      -- sha256(normalize(subject||predicate||object||source_id||user_id)); ADR-005, v0.5.0-pre1
   confidence   REAL,
   state        TEXT NOT NULL,      -- auto | pending | confirmed | rejected
   created_at   TIMESTAMP NOT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS claims (
 );
 CREATE INDEX IF NOT EXISTS idx_claims_user_state ON claims(user_id, state);
 CREATE INDEX IF NOT EXISTS idx_claims_subject    ON claims(user_id, subject);
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content ON claims(content_hash, source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_claims_content ON claims(content_hash, source_id, user_id);
 
 -- 4. decisions (empty skeleton) ------------------------------------------------
 CREATE TABLE IF NOT EXISTS decisions (

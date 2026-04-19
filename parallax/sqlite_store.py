@@ -151,7 +151,8 @@ def insert_memory(conn: sqlite3.Connection, memory: Memory) -> None:
 
 
 def insert_claim(conn: sqlite3.Connection, claim: Claim) -> None:
-    """Insert a claim row; dedup via ``UNIQUE(content_hash, source_id)``."""
+    """Insert a claim row; dedup via ``UNIQUE(content_hash, source_id, user_id)``
+    (ADR-005, v0.5.0-pre1)."""
     with conn:
         conn.execute(
             """

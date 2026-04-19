@@ -53,6 +53,7 @@ def test_three_claims_persisted_and_retrievable(conn: sqlite3.Connection) -> Non
             claim_predicate(raw),
             raw.claim_text,
             "direct:chris",
+            "chris",
         )
         row = claim_by_content_hash(conn, ch)
         assert row is not None

@@ -1,7 +1,11 @@
-"""Regression tests for ADR-004 — claim dedup includes source_id.
+"""Regression tests for ADR-004 + ADR-005 — claim dedup is scoped to
+(source_id, user_id).
 
-The content_hash formula `sha256(normalize(subject||predicate||object||source_id))`
-IS the dedup key. Same triple under different source_ids = two distinct rows.
+The content_hash formula
+`sha256(normalize(subject||predicate||object||source_id||user_id))` IS the
+dedup key. Same triple under different source_ids = two distinct rows
+(ADR-004). Same triple + source_id under different user_ids = two
+distinct rows (ADR-005, v0.5.0-pre1).
 """
 
 from __future__ import annotations
@@ -85,7 +89,7 @@ class TestClaimDedupSemantics:
             object_="coffee",
             source_id="src-xyz",
         )
-        expected = content_hash("chris", "likes", "coffee", "src-xyz")
+        expected = content_hash("chris", "likes", "coffee", "src-xyz", "chris")
         row = query(
             conn,
             "SELECT content_hash FROM claims WHERE claim_id = ?",

@@ -39,6 +39,7 @@ from parallax.migrations import (
     m0004_events_user_time_index,
     m0005_claim_metadata_fk,
     m0006_events_session_id,
+    m0007_claim_content_hash_user_id,
 )
 from parallax.sqlite_store import now_iso
 
@@ -100,6 +101,12 @@ MIGRATIONS: list[Migration] = [
         name="events_session_id",
         up=m0006_events_session_id.up,
         down=m0006_events_session_id.down,
+    ),
+    Migration(
+        version=7,
+        name="claim_content_hash_user_id",
+        up=m0007_claim_content_hash_user_id.up,
+        down=m0007_claim_content_hash_user_id.down,
     ),
 ]
 
@@ -202,6 +209,7 @@ _MIGRATION_MODULES: dict[int, object] = {
     4: m0004_events_user_time_index,
     5: m0005_claim_metadata_fk,
     6: m0006_events_session_id,
+    7: m0007_claim_content_hash_user_id,
 }
 
 # Matches table identifiers following the DDL/DML keywords we care about.

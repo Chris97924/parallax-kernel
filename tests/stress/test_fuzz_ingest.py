@@ -218,7 +218,7 @@ class TestSchemaFormulaFuzz:
         row = query(
             conn, "SELECT content_hash FROM claims WHERE claim_id = ?", (cid,)
         )[0]
-        expected = content_hash(subject, predicate, obj, "direct:u")
+        expected = content_hash(subject, predicate, obj, "direct:u", "u")
         assert row["content_hash"] == expected
 
 
