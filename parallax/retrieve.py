@@ -199,16 +199,36 @@ def _parse_iso(ts: str) -> _dt.datetime:
     return _dt.datetime.fromisoformat(ts)
 
 
-def _iso_normalize(ts: str) -> str:
-    """Normalize an ISO-8601 string to UTC-offset form used by now_iso().
+def _iso_normalize(ts: str, *, kind: str = "since") -> str:
+    """Normalize an ISO-8601 string to the exact form used by ``now_iso()``.
 
-    Keeps lexicographic comparison against stored ``created_at`` consistent
-    regardless of whether the caller passed a 'Z' suffix or a space separator.
+    The output always carries both a microsecond component and a ``+00:00``
+    offset so lexicographic comparison against stored ``created_at`` values
+    is stable. Required by the SQLite ``created_at >= ? AND created_at <= ?``
+    window in :func:`by_timeline`:
+
+    * ``kind='since'`` — micro=0 is preserved; bound is inclusive from the
+      start of the second.
+    * ``kind='until'`` — if the input microsecond is 0, it is expanded to
+      ``999999`` so the second-boundary is inclusive to the end of the
+      second. Without this, ``now_iso()`` rows like
+      ``"...T12:00:00.500000+00:00"`` fall OUTSIDE a query whose
+      ``until="...T12:00:00Z"`` normalized naively (BUG 1).
+
+    Immutability: the input string is not aliased or mutated; a new string
+    is returned.
     """
+    if kind not in ("since", "until"):
+        raise ValueError(f"kind must be 'since' or 'until'; got {kind!r}")
     dt = _parse_iso(ts)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=_dt.UTC)
-    return dt.astimezone(_dt.UTC).isoformat()
+    dt = dt.astimezone(_dt.UTC)
+    if kind == "until" and dt.microsecond == 0:
+        dt = dt.replace(microsecond=999_999)
+    # Force the ``.SSSSSS`` component so the lex-compared bound always has
+    # the same layout as stored ``now_iso()`` rows (BUG 1/4).
+    return dt.isoformat(timespec="microseconds")
 
 
 def _recency_score(created_at: str, now: _dt.datetime | None = None) -> float:
@@ -472,8 +492,8 @@ def by_timeline(
 ) -> list[RetrievalHit]:
     """Events in a timestamp window [since, until] ordered ascending."""
     try:
-        since_norm = _iso_normalize(since)
-        until_norm = _iso_normalize(until)
+        since_norm = _iso_normalize(since, kind="since")
+        until_norm = _iso_normalize(until, kind="until")
     except ValueError as exc:
         raise ValueError(f"by_timeline: could not parse since/until ISO-8601 ({exc})") from exc
     if since_norm > until_norm:

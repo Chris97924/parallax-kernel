@@ -39,8 +39,17 @@ __all__ = [
 
 
 def now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string."""
-    return _dt.datetime.now(_dt.UTC).isoformat()
+    """Return the current UTC time as an ISO-8601 string.
+
+    Always includes microsecond precision (``timespec='microseconds'``) so
+    stored ``created_at`` strings have a stable length and field layout. The
+    retrieval window in :func:`parallax.retrieve.by_timeline` relies on this
+    invariant: its ``_iso_normalize`` emits ``'.SSSSSS+00:00'`` bounds, and
+    any stored row lacking the microsecond component would break
+    lex-compare at position 19 (``'+'`` vs ``'.'``) and silently drop out
+    of the window (BUG 1/4, v0.5.0-pre1).
+    """
+    return _dt.datetime.now(_dt.UTC).isoformat(timespec="microseconds")
 
 
 # ----- Record dataclasses ---------------------------------------------------
