@@ -74,6 +74,7 @@ class TestEnsureUtf8Streams:
         monkeypatch.setattr(sys, "stdout", stdout_rec)
         monkeypatch.setattr(sys, "stderr", stderr_rec)
         _ensure_utf8_streams()
+        assert stdout_rec.encoding.lower() == "utf-8"
         assert stderr_rec.encoding.lower() == "utf-8"
 
 
