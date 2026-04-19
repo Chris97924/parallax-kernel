@@ -188,7 +188,9 @@ def ingest_claim(
         if source_id is None:
             source_id = _ensure_direct_source(conn, user_id)
 
-        ch = content_hash(subject, predicate, object_, source_id)
+        # v0.5.0-pre1 / ADR-005: user_id is part of the hash so cross-user
+        # same-source same-triple claims stay distinct.
+        ch = content_hash(subject, predicate, object_, source_id, user_id)
         now = now_iso()
         new_id = _ulid()
         candidate = Claim(
@@ -207,8 +209,9 @@ def ingest_claim(
         insert_claim(conn, candidate)
         row = query(
             conn,
-            "SELECT claim_id FROM claims WHERE content_hash = ? AND source_id = ?",
-            (ch, source_id),
+            "SELECT claim_id FROM claims WHERE content_hash = ? AND source_id = ? "
+            "AND user_id = ?",
+            (ch, source_id, user_id),
         )
         persisted_id = row[0]["claim_id"]
         _c_claim.inc()
