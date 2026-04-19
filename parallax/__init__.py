@@ -10,6 +10,9 @@ package root:
         Source, Memory, Claim, Event,
         record_event, record_memory_reaffirmed, record_claim_state_changed,
         is_allowed_transition, rebuild_index,
+        content_hash, normalize, reaffirm,
+        migrate_to_latest, migration_plan, MigrationPlan, MigrationStep,
+        replay_events, backfill_creation_events,
     )
 """
 
@@ -18,11 +21,29 @@ from parallax.events import (
     record_event,
     record_memory_reaffirmed,
 )
+from parallax.hashing import content_hash, normalize
 from parallax.hooks import ingest_from_json, ingest_hook
 from parallax.index import rebuild_index
 from parallax.ingest import ingest_claim, ingest_memory
 from parallax.injector import build_session_reminder
 from parallax.introspection import ParallaxInfo, parallax_info
+from parallax.migrations import (
+    MIGRATIONS,
+    Migration,
+    MigrationPlan,
+    MigrationStep,
+    applied_versions,
+    migrate_down_to,
+    migrate_to_latest,
+    migration_plan,
+    pending,
+)
+from parallax.replay import (
+    BackfillSummary,
+    ReplaySummary,
+    backfill_creation_events,
+    replay_events,
+)
 from parallax.retrieve import (
     RetrievalHit,
     by_bug_fix,
@@ -37,7 +58,7 @@ from parallax.retrieve import (
     memory_by_content_hash,
     recent_context,
 )
-from parallax.sqlite_store import Claim, Event, Memory, Source
+from parallax.sqlite_store import Claim, Event, Memory, Source, reaffirm
 from parallax.telemetry import health
 from parallax.transitions import (
     CLAIM_TRANSITIONS,
@@ -53,7 +74,7 @@ from parallax.validators import (
     target_ref_exists,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "ingest_memory",
@@ -93,5 +114,22 @@ __all__ = [
     "ingest_hook",
     "ingest_from_json",
     "build_session_reminder",
+    # v0.4.0 additions:
+    "content_hash",
+    "normalize",
+    "reaffirm",
+    "Migration",
+    "MIGRATIONS",
+    "MigrationPlan",
+    "MigrationStep",
+    "migrate_to_latest",
+    "migrate_down_to",
+    "migration_plan",
+    "applied_versions",
+    "pending",
+    "replay_events",
+    "backfill_creation_events",
+    "ReplaySummary",
+    "BackfillSummary",
     "__version__",
 ]

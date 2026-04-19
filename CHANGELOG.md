@@ -3,6 +3,65 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-04-19
+
+### Added
+- **`parallax.replay` — full events-based rebuild of claims/memories.**
+  `replay_events(conn, *, into_conn=None)` walks the events log in
+  (created_at ASC, event_id ASC) order and applies
+  `memory.created` / `claim.created` / `claim.state_changed` /
+  `memory.state_changed` events to rebuild row state bit-for-bit. When
+  `into_conn` is provided, rows are written into the target while events
+  are read from the source — the production rebuild path against a
+  schema-only DB. `*.state_changed` events carry `updated_at` in the
+  payload so the column survives replay unchanged; events without
+  `updated_at` (pre-0.4.0) fall back to a state-only UPDATE.
+  Reaffirmation events are counted but do not mutate rows; unknown event
+  types are skipped (not raised).
+  `backfill_creation_events(conn)` is a one-shot helper for pre-0.4.0
+  DBs: it synthesizes a `memory.created` / `claim.created` event for
+  every row lacking one, preserving the row's own `created_at` so
+  chronological order against coexisting `state_changed` events stays
+  intact. Idempotent via NOT EXISTS guard.
+- **`parallax.ingest` now emits creation events.** Every first-write
+  `ingest_memory` / `ingest_claim` call records a `memory.created` /
+  `claim.created` event carrying the full row payload — the events log
+  is now the source of truth for row rebuild. Dedup hits continue to
+  emit `*.reaffirmed`.
+- **ADR-004: claim dedup includes `source_id`.** Codifies
+  `claims.content_hash = sha256(normalize(subject||predicate||object||source_id))`
+  as the dedup key. Two claims with identical triples but different
+  sources remain two rows by design. Regression tests in
+  `tests/test_claim_dedup_semantics.py`.
+- **Migration dry-run / introspection.** `migration_plan(conn)` returns
+  a frozen `MigrationPlan` (applied versions, pending `MigrationStep`s,
+  current/target version). Each `MigrationStep` reports the DDL
+  statements and a `row_impact_estimates` map of referenced tables →
+  current row counts. `parallax inspect migrate [--dry-run] [--json]`
+  prints the plan; the function is non-destructive (only `SELECT`s run).
+- **`parallax.hashing.normalize` accepts `Optional[str]`.** `None` values
+  are encoded with an internal sentinel (`\x00\x00NONE\x00\x00`) before
+  `||`-join so `normalize(None)` and `normalize('')` produce different
+  canonical strings. Closes the prior P1 LOW collision where
+  `memory(title=None)` and `memory(title='')` hashed identically.
+  Existing `title_for_hash = "" if title is None else title` shims
+  removed from `ingest`.
+- **`reaffirm()` typed signature.** `sqlite_store.reaffirm` changes from
+  `*args, **kwargs -> None` to
+  `(*, user_id, kind, entity_id, actor='system') -> str`. `kind` must
+  be `"memory"` or `"claim"`; memory delegates to
+  `record_memory_reaffirmed`, claim emits `claim.reaffirmed` via
+  `record_event`. Returns the generated `event_id`.
+- **Public API re-exports.** `parallax/__init__.py` now exports
+  `content_hash`, `normalize`, `reaffirm`, `migrate_to_latest`,
+  `migrate_down_to`, `migration_plan`, `MigrationPlan`,
+  `MigrationStep`, `applied_versions`, `pending`, `replay_events`,
+  `backfill_creation_events`, `ReplaySummary`, `BackfillSummary`.
+  `tests/test_public_api.py` guards `__all__` against silent drift.
+
+### Changed
+- `__version__` bump 0.3.0 → 0.4.0.
+
 ## [0.3.0] - 2026-04-19
 
 ### Added

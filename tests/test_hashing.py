@@ -45,14 +45,15 @@ class TestNormalize:
     def test_preserves_internal_whitespace(self) -> None:
         assert normalize("hello world") == "hello world"
 
-    def test_none_raises_type_error(self) -> None:
-        # v0.1.2 contract: None is explicitly rejected. Callers must convert
-        # Optional[str] to "" themselves. This makes the boundary contract
-        # explicit and prevents silent hash-equivalence between None and "".
-        with pytest.raises(TypeError, match="None"):
-            normalize(None)
-        with pytest.raises(TypeError, match="None"):
-            normalize("a", None, "c")
+    def test_none_uses_sentinel(self) -> None:
+        # v0.4.0 contract: None is encoded with an internal sentinel so that
+        # normalize(None) != normalize("") and content_hash(None) != content_hash("").
+        assert normalize(None) != normalize("")
+        assert normalize("a", None, "c") != normalize("a", "", "c")
+
+    def test_none_is_stable(self) -> None:
+        assert normalize(None) == normalize(None)
+        assert normalize("a", None, "c") == normalize("a", None, "c")
 
     def test_empty_call_returns_empty(self) -> None:
         assert normalize() == ""
@@ -98,10 +99,6 @@ class TestContentHash:
     def test_whitespace_insensitive_on_edges(self) -> None:
         assert content_hash("  hi  ") == content_hash("hi")
 
-    def test_none_propagates_type_error(self) -> None:
-        with pytest.raises(TypeError, match="None"):
-            content_hash("a", None, "c")
-
     def test_schema_memories_example(self) -> None:
         # memories: sha256(normalize(title||summary||vault_path))
         h = content_hash("My Title", "A summary.", "users/chris/memories/foo.md")
@@ -128,3 +125,24 @@ class TestContentHash:
         h = content_hash(*parts)
         assert len(h) == 64
         int(h, 16)
+
+
+class TestNoneSentinelCollisionFix:
+    """v0.4.0 — None is encoded distinctly from '' (P1 LOW collision fix)."""
+
+    def test_normalize_none_vs_empty(self) -> None:
+        assert normalize(None) != normalize("")
+
+    def test_content_hash_none_vs_empty_single(self) -> None:
+        assert content_hash(None) != content_hash("")
+
+    def test_content_hash_none_vs_empty_multi(self) -> None:
+        assert content_hash(None, "x") != content_hash("", "x")
+        assert content_hash("a", None, "b") != content_hash("a", "", "b")
+
+    def test_content_hash_none_is_stable(self) -> None:
+        assert content_hash(None) == content_hash(None)
+        assert content_hash("a", None, "b") == content_hash("a", None, "b")
+
+    def test_all_none_distinct_from_all_empty(self) -> None:
+        assert content_hash(None, None, None) != content_hash("", "", "")

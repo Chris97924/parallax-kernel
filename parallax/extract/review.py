@@ -17,6 +17,7 @@ from parallax.extract.ingest import claim_predicate
 from parallax.extract.types import RawClaim
 from parallax.ingest import ingest_claim
 from parallax.retrieve import claims_by_user
+from parallax.sqlite_store import now_iso
 from parallax.transitions import is_allowed_transition
 
 __all__ = ["PendingClaim", "queue_pending", "list_pending", "approve", "reject"]
@@ -86,11 +87,15 @@ def _transition(
         raise ValueError(
             f"transition 'pending' -> {to_state!r} not allowed for claims"
         )
+    # Compute updated_at once so the UPDATE and the state_changed event
+    # agree bit-for-bit — replay relies on the event payload to reconstruct
+    # this column.
+    updated_at = now_iso()
     with conn:
         cursor = conn.execute(
-            "UPDATE claims SET state = ?, updated_at = datetime('now') "
+            "UPDATE claims SET state = ?, updated_at = ? "
             "WHERE claim_id = ? AND state = 'pending'",
-            (to_state, claim_id),
+            (to_state, updated_at, claim_id),
         )
         if cursor.rowcount == 0:
             # Either the row doesn't exist or it is already past 'pending'.
@@ -114,6 +119,7 @@ def _transition(
             claim_id=claim_id,
             from_state="pending",
             to_state=to_state,
+            updated_at=updated_at,
         )
 
 

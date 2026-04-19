@@ -27,6 +27,7 @@ Public surface:
 from __future__ import annotations
 
 import dataclasses
+import re
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -44,8 +45,11 @@ from parallax.sqlite_store import now_iso
 __all__ = [
     "Migration",
     "MIGRATIONS",
+    "MigrationStep",
+    "MigrationPlan",
     "migrate_to_latest",
     "migrate_down_to",
+    "migration_plan",
     "applied_versions",
     "pending",
     "ensure_schema_migrations_table",
@@ -173,6 +177,107 @@ def migrate_to_latest(conn: sqlite3.Connection) -> list[int]:
             )
         newly_applied.append(mig.version)
     return newly_applied
+
+
+@dataclasses.dataclass(frozen=True)
+class MigrationStep:
+    version: int
+    name: str
+    statements: tuple[str, ...]
+    row_impact_estimates: dict[str, int]
+
+
+@dataclasses.dataclass(frozen=True)
+class MigrationPlan:
+    applied: tuple[int, ...]
+    pending: tuple[MigrationStep, ...]
+    current_version: int | None
+    target_version: int
+
+
+_MIGRATION_MODULES: dict[int, object] = {
+    1: m0001_initial_schema,
+    2: m0002_events_append_only,
+    3: m0003_claim_metadata,
+    4: m0004_events_user_time_index,
+    5: m0005_claim_metadata_fk,
+    6: m0006_events_session_id,
+}
+
+# Matches table identifiers following the DDL/DML keywords we care about.
+# Deliberately conservative: ignores quoted identifiers and schema prefixes —
+# Parallax migrations use bare snake_case names throughout.
+_TABLE_RE = re.compile(
+    r"\b(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?"
+    r"|DROP\s+TABLE(?:\s+IF\s+EXISTS)?"
+    r"|ALTER\s+TABLE"
+    r"|INSERT\s+INTO"
+    r"|UPDATE"
+    r"|FROM)\s+([A-Za-z_][A-Za-z0-9_]*)",
+    re.IGNORECASE,
+)
+
+
+def _extract_tables(statements: tuple[str, ...]) -> list[str]:
+    seen: list[str] = []
+    for stmt in statements:
+        for m in _TABLE_RE.finditer(stmt):
+            name = m.group(1)
+            if name not in seen:
+                seen.append(name)
+    return seen
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _row_count(conn: sqlite3.Connection, table: str) -> int:
+    if not _table_exists(conn, table):
+        return 0
+    row = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def migration_plan(conn: sqlite3.Connection) -> MigrationPlan:
+    """Return a non-destructive snapshot of the migration state.
+
+    For every pending migration, enumerates the DDL/DML statements that
+    would run and estimates row impact by running ``SELECT COUNT(*)``
+    against every table the statements reference (tables that don't yet
+    exist report 0). The function issues ONLY SELECTs — no BEGIN, no DDL,
+    no writes — so it is safe to call against a live production DB and
+    produces identical output on repeated calls.
+    """
+    ensure_schema_migrations_table(conn)
+    applied = tuple(sorted(applied_versions(conn)))
+    pending_migs = pending(conn)
+    steps: list[MigrationStep] = []
+    for mig in pending_migs:
+        module = _MIGRATION_MODULES[mig.version]
+        raw_stmts = tuple(getattr(module, "STATEMENTS", ()))
+        tables = _extract_tables(raw_stmts)
+        impact = {t: _row_count(conn, t) for t in tables}
+        steps.append(
+            MigrationStep(
+                version=mig.version,
+                name=mig.name,
+                statements=raw_stmts,
+                row_impact_estimates=impact,
+            )
+        )
+    current = max(applied) if applied else None
+    target = max(m.version for m in MIGRATIONS)
+    return MigrationPlan(
+        applied=applied,
+        pending=tuple(steps),
+        current_version=current,
+        target_version=target,
+    )
 
 
 def migrate_down_to(conn: sqlite3.Connection, target_version: int) -> list[int]:

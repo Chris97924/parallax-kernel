@@ -99,6 +99,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_inject.add_argument("--session", dest="session_id", default=None)
     p_inject.add_argument("--max", dest="max_hits", type=int, default=8)
 
+    p_mig = isub.add_parser(
+        "migrate",
+        help="Show the migration plan (non-destructive).",
+    )
+    p_mig.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="explicit flag; dry-run is the only mode this subcommand supports",
+    )
+    p_mig.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="emit the migration plan as JSON for machine consumption",
+    )
+
     return parser
 
 
@@ -258,6 +274,57 @@ def _cmd_inspect_retrieve(
         conn.close()
 
 
+def _cmd_inspect_migrate(*, as_json: bool) -> int:
+    import json as _json
+
+    from parallax.migrations import MIGRATIONS, migration_plan
+
+    conn = _open_conn()
+    try:
+        plan = migration_plan(conn)
+    finally:
+        conn.close()
+
+    if as_json:
+        payload = {
+            "applied": list(plan.applied),
+            "current_version": plan.current_version,
+            "target_version": plan.target_version,
+            "pending": [
+                {
+                    "version": s.version,
+                    "name": s.name,
+                    "statements": list(s.statements),
+                    "row_impact_estimates": s.row_impact_estimates,
+                }
+                for s in plan.pending
+            ],
+        }
+        print(_json.dumps(payload, indent=2, sort_keys=True))
+        return _EXIT_OK
+
+    applied_set = set(plan.applied)
+    print(f"{'version':>7}  {'name':<26}  {'status':<8}  est_row_impact")
+    for mig in sorted(MIGRATIONS, key=lambda m: m.version):
+        if mig.version in applied_set:
+            status = "applied"
+            impact = "-"
+        else:
+            status = "pending"
+            step = next(
+                (s for s in plan.pending if s.version == mig.version), None
+            )
+            impact = (
+                ",".join(
+                    f"{t}={n}" for t, n in sorted(step.row_impact_estimates.items())
+                )
+                if step
+                else "-"
+            )
+        print(f"{mig.version:>7}  {mig.name:<26}  {status:<8}  {impact}")
+    return _EXIT_OK
+
+
 def _cmd_inspect_inject(*, user_id: str, session_id: str | None, max_hits: int) -> int:
     from parallax.injector import build_session_reminder
 
@@ -307,6 +374,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 session_id=args.session_id,
                 max_hits=args.max_hits,
             )
+        if args.inspect_cmd == "migrate":
+            return _cmd_inspect_migrate(as_json=args.as_json)
         parser.parse_args(["inspect", "--help"])
         return _EXIT_USAGE
     parser.print_help(sys.stderr)

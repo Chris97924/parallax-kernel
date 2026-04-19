@@ -81,6 +81,7 @@ Every ADR uses the same six sections in this order:
 | [ADR-001](ADR-001-content-hash-ssot.md)           | Accepted | `content_hash` = `sha256(NFC-strip + '||' join)`; one implementation — UUIDv4 (random) and UUIDv5 (namespaced) both rejected. |
 | [ADR-002](ADR-002-wal-page1-corruption-policy.md) | Accepted | WAL mode + inject corruption inside page 1 after a TRUNCATE checkpoint.        |
 | [ADR-003](ADR-003-target-kind-split.md)           | Accepted | `events.target_kind` intentionally unconstrained; `decisions.target_kind` hard-CHECKed to `{memory,claim,source}`. |
+| [ADR-004](ADR-004-claim-dedup-includes-source-id.md) | Accepted | `claims.content_hash` includes `source_id`; identical triple under different sources is two rows by design. |
 
 ## When to write a new ADR
 

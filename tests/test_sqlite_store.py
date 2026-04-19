@@ -180,7 +180,77 @@ class TestQuery:
         assert len(rows) == 1
 
 
-class TestReaffirm:
-    def test_reaffirm_is_noop(self, conn: sqlite3.Connection) -> None:
-        result = reaffirm(conn, "anything", foo="bar")
-        assert result is None
+class TestReaffirmSurface:
+    """v0.4.0: reaffirm() is a typed public facade over record_event."""
+
+    def _seed_memory(self, conn: sqlite3.Connection, seeded_source: Source) -> str:
+        mem = Memory(
+            memory_id="mem-1",
+            user_id="chris",
+            source_id=seeded_source.source_id,
+            vault_path="v.md",
+            title="t",
+            summary="s",
+            content_hash=content_hash("t", "s", "v.md"),
+            state="active",
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        insert_memory(conn, mem)
+        return mem.memory_id
+
+    def _seed_claim(self, conn: sqlite3.Connection, seeded_source: Source) -> str:
+        cla = Claim(
+            claim_id="cla-1",
+            user_id="chris",
+            subject="x",
+            predicate="y",
+            object="z",
+            source_id=seeded_source.source_id,
+            content_hash=content_hash("x", "y", "z", seeded_source.source_id),
+            confidence=None,
+            state="auto",
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        insert_claim(conn, cla)
+        return cla.claim_id
+
+    def test_memory_kind_emits_memory_reaffirmed(
+        self, conn: sqlite3.Connection, seeded_source: Source
+    ) -> None:
+        mid = self._seed_memory(conn, seeded_source)
+        eid = reaffirm(conn, user_id="chris", kind="memory", entity_id=mid)
+        assert isinstance(eid, str) and len(eid) > 0
+        rows = query(
+            conn,
+            "SELECT event_type FROM events WHERE event_id = ?",
+            (eid,),
+        )
+        assert len(rows) == 1
+        assert rows[0]["event_type"] == "memory.reaffirmed"
+
+    def test_claim_kind_emits_claim_reaffirmed(
+        self, conn: sqlite3.Connection, seeded_source: Source
+    ) -> None:
+        cid = self._seed_claim(conn, seeded_source)
+        eid = reaffirm(conn, user_id="chris", kind="claim", entity_id=cid)
+        assert isinstance(eid, str) and len(eid) > 0
+        rows = query(
+            conn,
+            "SELECT event_type, target_id FROM events WHERE event_id = ?",
+            (eid,),
+        )
+        assert len(rows) == 1
+        assert rows[0]["event_type"] == "claim.reaffirmed"
+        assert rows[0]["target_id"] == cid
+
+    def test_invalid_kind_raises_value_error(self, conn: sqlite3.Connection) -> None:
+        with pytest.raises(ValueError, match="memory"):
+            reaffirm(conn, user_id="chris", kind="source", entity_id="s")
+
+    def test_missing_required_kw_raises_type_error(
+        self, conn: sqlite3.Connection
+    ) -> None:
+        with pytest.raises(TypeError):
+            reaffirm(conn, user_id="chris", kind="memory")  # type: ignore[call-arg]

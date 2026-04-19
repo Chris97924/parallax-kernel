@@ -7,18 +7,20 @@ Wraps :mod:`parallax.sqlite_store` with UPSERT semantics:
   NULL-hole on ``claims.source_id``.
 * content_hash collisions are absorbed -- the existing row's id is returned
   and no duplicate is written. Re-ingestion is therefore safe and the
-  "reaffirm" branch is silent in Phase-0 (see :func:`parallax.sqlite_store.reaffirm`).
+  reaffirm branch emits a ``*.reaffirmed`` event via the events log (see
+  :func:`parallax.sqlite_store.reaffirm` / :func:`parallax.events.record_memory_reaffirmed`).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 import time
 
 from ulid import ULID
 
 from parallax import telemetry
-from parallax.events import record_memory_reaffirmed
+from parallax.events import record_event, record_memory_reaffirmed
 from parallax.hashing import content_hash
 from parallax.obs.log import get_logger
 from parallax.obs.metrics import get_counter
@@ -94,29 +96,25 @@ def ingest_memory(
         if source_id is None:
             source_id = _ensure_direct_source(conn, user_id)
 
-        # hashing.normalize rejects None explicitly (v0.1.2 boundary
-        # contract); Memory.title/summary remain Optional[str] at the
-        # storage layer, so we canonicalize None -> "" here before hashing.
-        title_for_hash = "" if title is None else title
-        summary_for_hash = "" if summary is None else summary
-        ch = content_hash(title_for_hash, summary_for_hash, vault_path)
+        # v0.4.0: hashing.normalize encodes None with a distinct sentinel,
+        # so title/summary flow straight through — no boundary conversion,
+        # no silent collision between memory(title=None) and memory(title='').
+        ch = content_hash(title, summary, vault_path)
         now = now_iso()
         new_id = _ulid()
-        insert_memory(
-            conn,
-            Memory(
-                memory_id=new_id,
-                user_id=user_id,
-                source_id=source_id,
-                vault_path=vault_path,
-                title=title,
-                summary=summary,
-                content_hash=ch,
-                state="active",
-                created_at=now,
-                updated_at=now,
-            ),
+        candidate = Memory(
+            memory_id=new_id,
+            user_id=user_id,
+            source_id=source_id,
+            vault_path=vault_path,
+            title=title,
+            summary=summary,
+            content_hash=ch,
+            state="active",
+            created_at=now,
+            updated_at=now,
         )
+        insert_memory(conn, candidate)
         row = query(
             conn,
             "SELECT memory_id FROM memories WHERE content_hash = ? AND user_id = ?",
@@ -131,6 +129,20 @@ def ingest_memory(
             telemetry.inc("dedup_hits_total")
             telemetry.emit_dedup_hit(_tlog, kind="memory", user_id=user_id, memory_id=persisted_id)
             record_memory_reaffirmed(conn, user_id=user_id, memory_id=persisted_id)
+        else:
+            # Emit memory.created with the full row payload so
+            # parallax.replay can rebuild this row bit-for-bit. Safe to
+            # use ``asdict(candidate)`` because on the first-write branch
+            # ``candidate.memory_id == new_id == persisted_id``.
+            record_event(
+                conn,
+                user_id=user_id,
+                actor="system",
+                event_type="memory.created",
+                target_kind="memory",
+                target_id=persisted_id,
+                payload=dataclasses.asdict(candidate),
+            )
         _log.info(
             "ingest_memory",
             extra={"event": "ingest_memory", "user_id": user_id, "memory_id": persisted_id,
@@ -179,22 +191,20 @@ def ingest_claim(
         ch = content_hash(subject, predicate, object_, source_id)
         now = now_iso()
         new_id = _ulid()
-        insert_claim(
-            conn,
-            Claim(
-                claim_id=new_id,
-                user_id=user_id,
-                subject=subject,
-                predicate=predicate,
-                object=object_,
-                source_id=source_id,
-                content_hash=ch,
-                confidence=confidence,
-                state=state,
-                created_at=now,
-                updated_at=now,
-            ),
+        candidate = Claim(
+            claim_id=new_id,
+            user_id=user_id,
+            subject=subject,
+            predicate=predicate,
+            object=object_,
+            source_id=source_id,
+            content_hash=ch,
+            confidence=confidence,
+            state=state,
+            created_at=now,
+            updated_at=now,
         )
+        insert_claim(conn, candidate)
         row = query(
             conn,
             "SELECT claim_id FROM claims WHERE content_hash = ? AND source_id = ?",
@@ -208,6 +218,19 @@ def ingest_claim(
             _c_dedup.inc()
             telemetry.inc("dedup_hits_total")
             telemetry.emit_dedup_hit(_tlog, kind="claim", user_id=user_id, claim_id=persisted_id)
+        else:
+            # Emit claim.created with the full row payload. Same
+            # ``persisted_id == candidate.claim_id`` invariant as the
+            # memory branch above.
+            record_event(
+                conn,
+                user_id=user_id,
+                actor="system",
+                event_type="claim.created",
+                target_kind="claim",
+                target_id=persisted_id,
+                payload=dataclasses.asdict(candidate),
+            )
         _log.info(
             "ingest_claim",
             extra={"event": "ingest_claim", "user_id": user_id, "claim_id": persisted_id,
