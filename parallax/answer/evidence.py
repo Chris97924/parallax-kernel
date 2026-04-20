@@ -10,6 +10,8 @@ runs showed that wording drove over-abstention on paraphrased evidence.
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 
 from parallax.llm.call import call
 from parallax.retrieval.contracts import (
@@ -62,7 +64,12 @@ def answer(
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    cache_key = f"answer::{question_id or question}::{len(evidence.hits)}"
+    ev_hash = hashlib.sha256(
+        json.dumps(
+            [h.get("id", "") for h in evidence.hits], sort_keys=True
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    cache_key = f"answer::{question_id or question}::{ev_hash}"
     result = call(
         model,
         messages,

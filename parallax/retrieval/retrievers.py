@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from typing import Any
 
 from parallax.retrieval.contracts import RetrievalEvidence
@@ -23,23 +24,54 @@ MAX_EVIDENCE_TOKENS: int = 6000
 
 _MODEL: Any = None
 _MODEL_LOAD_ERROR: Exception | None = None
+_MODEL_LOCK = threading.Lock()
+
+# Keyed by (user_id, max_created_at_in_candidate_pool). Value is the numpy
+# array of item embeddings. Invalidated implicitly whenever a newer claim /
+# event is ingested (the key changes). Sweeps that replay the same corpus
+# repeatedly (ablate_fallback, sweep_thresholds) see a single encode cost.
+_EMB_CACHE: dict[tuple[str, str], Any] = {}
+_EMB_CACHE_LOCK = threading.Lock()
 
 
 def _load_model() -> Any:
     global _MODEL, _MODEL_LOAD_ERROR
+    # Fast path: read without acquiring the lock. _MODEL / _MODEL_LOAD_ERROR
+    # writes below happen inside the lock, so a reader that sees either
+    # non-None sees a fully initialised value.
     if _MODEL is not None:
         return _MODEL
     if _MODEL_LOAD_ERROR is not None:
         return None
-    try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
+    with _MODEL_LOCK:
+        if _MODEL is not None:
+            return _MODEL
+        if _MODEL_LOAD_ERROR is not None:
+            return None
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore
 
-        _MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-    except Exception as exc:  # pragma: no cover
-        logger.warning("sentence-transformers unavailable: %s", exc)
-        _MODEL_LOAD_ERROR = exc
-        _MODEL = None
+            _MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        except Exception as exc:  # pragma: no cover
+            logger.warning("sentence-transformers unavailable: %s", exc)
+            _MODEL_LOAD_ERROR = exc
+            _MODEL = None
     return _MODEL
+
+
+def _embed_items_cached(model: Any, user_id: str, candidates: list[dict]) -> Any:
+    """Return item embeddings, cached by (user_id, max created_at)."""
+    max_ts = max((c.get("created_at") or "" for c in candidates), default="")
+    key = (user_id, max_ts)
+    with _EMB_CACHE_LOCK:
+        hit = _EMB_CACHE.get(key)
+        if hit is not None and len(hit) == len(candidates):
+            return hit
+    texts = [c["text"] for c in candidates]
+    embs = model.encode(texts, convert_to_numpy=True)
+    with _EMB_CACHE_LOCK:
+        _EMB_CACHE[key] = embs
+    return embs
 
 
 def _estimate_tokens(text: str) -> int:
@@ -199,9 +231,8 @@ def fallback_retrieve(
     else:
         diversity_mode = "mmr_embedding"
         stages.append(diversity_mode)
-        texts = [c["text"] for c in candidates]
         q_emb = model.encode([query], convert_to_numpy=True)[0]
-        item_embs = model.encode(texts, convert_to_numpy=True)
+        item_embs = _embed_items_cached(model, user_id, candidates)
         selected_idx = _mmr_rank(q_emb, item_embs, k_max)
 
     selected = [candidates[i] for i in selected_idx]

@@ -3,6 +3,10 @@
 Emits a schema-v2 RunReportV2 JSON per configuration plus a CSV summary.
 Dry-run (``--dry-run``) validates the config matrix and exits without
 hitting the LLM.
+
+NOTE: Day-1 will replace ``_stub_run`` with real ``run_one(...)`` against the
+filtered pipeline. The scaffold today exists to lock in the schema gate and
+the config matrix so a sweep kick-off is a one-line change.
 """
 
 from __future__ import annotations
@@ -67,7 +71,7 @@ def _stub_run(cfg: AblateConfig) -> dict[str, Any]:
             "by_intent_abstain": {i.value: 0.0 for i in Intent},
         },
         "run_id": f"ablate_fallback_{cfg.label()}",
-        "created_at": _dt.datetime.utcnow().isoformat(),
+        "created_at": _dt.datetime.now(_dt.UTC).isoformat(),
         "git_sha": None,
     }
 

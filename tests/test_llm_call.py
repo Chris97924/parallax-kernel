@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 import parallax.llm.call as call_module
@@ -90,3 +93,149 @@ def test_fallback_on_rate_limit(isolated_cache, monkeypatch):
     assert result["fallback_from"] == "gemini-2.5-pro"
     assert call_count["primary"] == 1
     assert call_count["fallback"] == 1
+
+
+def test_concurrent_calls_dedupe(isolated_cache, monkeypatch):
+    """Four threads hitting the same cache_key must share one dispatch."""
+    dispatches = {"n": 0}
+    gate = threading.Event()
+
+    def fake_dispatch(model, messages, *, temperature, max_output_tokens):
+        dispatches["n"] += 1
+        # Make the first dispatch slow enough that the other threads have a
+        # chance to race. Without the _db_lock fix, they would each dispatch.
+        gate.wait(timeout=0.5)
+        return {
+            "text": "shared",
+            "raw": {},
+            "model": model,
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+        }
+
+    monkeypatch.setattr(call_module, "_dispatch_with_retry", fake_dispatch)
+
+    msgs = [{"role": "user", "content": "same"}]
+
+    def _one():
+        return call("gemini-2.5-flash", msgs, cache_key="shared-key")
+
+    # Release the gate after threads are all queued at the DB lock.
+    def _release_soon():
+        threading.Event().wait(0.05)
+        gate.set()
+
+    releaser = threading.Thread(target=_release_soon)
+    releaser.start()
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        results = list(ex.map(lambda _: _one(), range(4)))
+    releaser.join()
+
+    assert dispatches["n"] == 1, (
+        f"expected exactly one dispatch, got {dispatches['n']}"
+    )
+    assert all(r["text"] == "shared" for r in results)
+    # At least one must see a live dispatch, the others must be cache hits.
+    assert sum(1 for r in results if r["_cached"]) >= 3
+
+
+def test_fallback_not_cached_under_primary_key(isolated_cache, monkeypatch):
+    """Primary 429 → fallback success must NOT leave a row under primary's hash."""
+    call_seq = {"primary": 0, "fallback": 0}
+
+    def fake_dispatch(model, messages, *, temperature, max_output_tokens):
+        if model == "gemini-2.5-pro":
+            call_seq["primary"] += 1
+            raise RateLimitError("429")
+        call_seq["fallback"] += 1
+        return {
+            "text": "flash-answer",
+            "raw": {},
+            "model": model,
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+        }
+
+    monkeypatch.setattr(call_module, "_dispatch_with_retry", fake_dispatch)
+
+    msgs = [{"role": "user", "content": "x"}]
+
+    first = call(
+        "gemini-2.5-pro",
+        msgs,
+        fallback_model="gemini-2.5-flash",
+    )
+    assert first["text"] == "flash-answer"
+    assert first["fallback_from"] == "gemini-2.5-pro"
+
+    # Now "primary quota returns": next call to the primary model must NOT
+    # be served from the cached fallback answer.
+    def fake_dispatch_ok(model, messages, *, temperature, max_output_tokens):
+        call_seq["primary"] += 1
+        return {
+            "text": "pro-answer",
+            "raw": {},
+            "model": model,
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+        }
+
+    monkeypatch.setattr(call_module, "_dispatch_with_retry", fake_dispatch_ok)
+
+    second = call("gemini-2.5-pro", msgs)
+    assert second["text"] == "pro-answer", (
+        "primary-model call was served from fallback-model cache — pollution bug"
+    )
+    assert second.get("_cached") is False
+
+
+def test_ratelimit_retry_before_fallback(isolated_cache, monkeypatch):
+    """RateLimitError is retried inside tenacity; fallback only if retries exhaust."""
+    attempts = {"n": 0, "fallback": 0}
+
+    def fake_dispatch(model, messages, *, temperature, max_output_tokens):
+        if model == "gemini-2.5-pro":
+            attempts["n"] += 1
+            if attempts["n"] < 3:
+                raise RateLimitError("429 transient")
+            return {
+                "text": "pro-ok",
+                "raw": {},
+                "model": model,
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+            }
+        attempts["fallback"] += 1
+        return {
+            "text": "flash",
+            "raw": {},
+            "model": model,
+            "prompt_tokens": 1,
+            "completion_tokens": 1,
+        }
+
+    # Bypass the tenacity-wrapped dispatcher by monkey-patching the *inner*
+    # _dispatch, so retry behaviour from the real decorator is exercised.
+    monkeypatch.setattr(call_module, "_dispatch", fake_dispatch)
+    # Collapse the exponential wait so the test doesn't sleep 5s+.
+    from tenacity import stop_after_attempt, wait_none
+
+    monkeypatch.setattr(
+        call_module._dispatch_with_retry.retry,
+        "wait",
+        wait_none(),
+    )
+    monkeypatch.setattr(
+        call_module._dispatch_with_retry.retry,
+        "stop",
+        stop_after_attempt(3),
+    )
+
+    result = call(
+        "gemini-2.5-pro",
+        [{"role": "user", "content": "x"}],
+        fallback_model="gemini-2.5-flash",
+    )
+    assert result["text"] == "pro-ok"
+    assert attempts["n"] == 3
+    assert attempts["fallback"] == 0, "fallback fired despite retry success"

@@ -9,6 +9,10 @@ Strategy:
    Flash-confidence thresholds ``{0.65, 0.70, 0.75}``.
 
 Writes one schema-v2 report per (rule, flash) pair.
+
+NOTE: Day-1 will replace ``_stub_report`` with real ``run_one(...)`` against
+the filtered pipeline. The scaffold today exists to lock in the schema gate
+and the config grid so a sweep kick-off is a one-line change.
 """
 
 from __future__ import annotations
@@ -61,7 +65,7 @@ def _stub_report(pair: ThresholdPair) -> dict[str, Any]:
             "by_intent_abstain": {i.value: 0.0 for i in Intent},
         },
         "run_id": f"sweep_{pair.label()}",
-        "created_at": _dt.datetime.utcnow().isoformat(),
+        "created_at": _dt.datetime.now(_dt.UTC).isoformat(),
         "git_sha": None,
     }
 

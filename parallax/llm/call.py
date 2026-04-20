@@ -5,8 +5,12 @@ Contract rules (ADR-006):
 * Every LLM call in Parallax goes through :func:`call`.
 * Cache key is deterministic over ``(model, messages, response_schema)`` —
   or the caller-supplied ``cache_key`` when they want to pin a run.
-* 429 / rate-limit raises :class:`RateLimitError`; if a ``fallback_model`` is
-  supplied, the call is retried once with that model.
+* 429 / rate-limit raises :class:`RateLimitError`; tenacity retries it a few
+  times with a 5s..60s exponential backoff. Only when retries are exhausted
+  do we fall through to the ``fallback_model`` branch.
+* Fallback results are stored under a fallback-keyed hash so re-issuing the
+  original call (e.g. once the primary model's quota is back) does not return
+  the fallback model's answer masquerading as the primary model's.
 * All provider-specific HTTP stays in ``_call_gemini`` / ``_call_anthropic``.
   Callers see a uniform ``dict`` return shape.
 """
@@ -38,7 +42,8 @@ class LLMCallError(RuntimeError):
 
 
 class RateLimitError(RuntimeError):
-    """Raised on 429 / RESOURCE_EXHAUSTED — triggers fallback_model."""
+    """Raised on 429 / RESOURCE_EXHAUSTED. Retried inside tenacity; if retries
+    are exhausted, the caller falls back to ``fallback_model``."""
 
 
 _DEFAULT_CACHE_PATH = pathlib.Path.home() / ".parallax" / "llm_cache.sqlite"
@@ -56,6 +61,10 @@ def _connect_cache() -> sqlite3.Connection:
     path = _cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
+    # WAL + busy_timeout so concurrent readers/writers (ablation sweeps,
+    # threshold sweeps) don't spuriously fail with "database is locked".
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS llm_cache (
@@ -212,7 +221,8 @@ def _call_anthropic(
         )
     except Exception as exc:
         msg = str(exc)
-        if "429" in msg or "rate" in msg.lower():
+        low = msg.lower()
+        if "429" in msg or "rate_limit" in low or "rate limit" in low:
             raise RateLimitError(msg) from exc
         raise LLMCallError(msg) from exc
 
@@ -253,9 +263,9 @@ def _dispatch(
 
 
 @retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception_type((LLMCallError,)),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=5, max=60),
+    retry=retry_if_exception_type((LLMCallError, RateLimitError)),
     reraise=True,
 )
 def _dispatch_with_retry(
@@ -287,6 +297,15 @@ def call(
 
     ``text``, ``raw``, ``model``, ``prompt_tokens``, ``completion_tokens``,
     ``_cached``.
+
+    Concurrency: the read-miss → dispatch → write sequence happens inside a
+    single ``_db_lock`` span with a re-check after the (blocking) lock is
+    acquired, so a thundering herd of identical calls only dispatches once.
+    The ``_dispatch_with_retry`` call itself is invoked under the lock — this
+    is intentional: for LongMemEval-style sweeps the right per-host concurrency
+    is 2–4, and serializing dispatch across threads sharing the same cache file
+    is cheaper than N parallel API calls that would all race to insert the
+    same row.
     """
     prompt_hash = _hash_prompt(model, messages, response_schema, cache_key)
 
@@ -294,42 +313,50 @@ def call(
         conn = _connect_cache()
         try:
             cached = _cache_get(conn, prompt_hash)
+            if cached is not None:
+                cached = dict(cached)
+                cached["_cached"] = True
+                return cached
+
+            try:
+                result = _dispatch_with_retry(
+                    model,
+                    messages,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                store_hash = prompt_hash
+                store_model = model
+            except RateLimitError:
+                if fallback_model is None:
+                    raise
+                logger.warning(
+                    "rate-limited on %s; falling back to %s", model, fallback_model
+                )
+                result = _dispatch_with_retry(
+                    fallback_model,
+                    messages,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+                result["fallback_from"] = model
+                # Store the fallback response under a fallback-specific hash so a
+                # later call with the primary model does NOT return the Flash
+                # answer labelled as Pro. This keeps fallback results cheap to
+                # re-serve while preserving primary-model cache correctness.
+                store_hash = _hash_prompt(
+                    fallback_model, messages, response_schema, cache_key
+                )
+                store_model = fallback_model
+
+            result["_cached"] = False
+
+            _cache_put(
+                conn,
+                store_model,
+                store_hash,
+                {k: v for k, v in result.items() if k != "_cached"},
+            )
+            return result
         finally:
             conn.close()
-
-    if cached is not None:
-        cached = dict(cached)
-        cached["_cached"] = True
-        return cached
-
-    try:
-        result = _dispatch_with_retry(
-            model,
-            messages,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        )
-    except RateLimitError:
-        if fallback_model is None:
-            raise
-        logger.warning("rate-limited on %s; falling back to %s", model, fallback_model)
-        result = _dispatch_with_retry(
-            fallback_model,
-            messages,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        )
-        # Cache under the original prompt hash so repeated hits are cheap,
-        # but record the fallback model in the payload.
-        result["fallback_from"] = model
-
-    result["_cached"] = False
-
-    with _db_lock:
-        conn = _connect_cache()
-        try:
-            _cache_put(conn, model, prompt_hash, {k: v for k, v in result.items() if k != "_cached"})
-        finally:
-            conn.close()
-
-    return result

@@ -28,8 +28,8 @@ class Intent(str, Enum):
 INTENT_PRIORITY: tuple[Intent, ...] = (
     Intent.TEMPORAL,
     Intent.MULTI_SESSION,
-    Intent.USER_FACT,
     Intent.PREFERENCE,
+    Intent.USER_FACT,
     Intent.KNOWLEDGE_UPDATE,
     Intent.FALLBACK,
 )
@@ -37,6 +37,15 @@ INTENT_PRIORITY: tuple[Intent, ...] = (
 
 @dataclass(frozen=True)
 class RetrievalEvidence:
+    """Frozen evidence bundle returned by retrievers.
+
+    ``hits`` is a tuple of dicts (``{id, text, created_at, source_id, kind}``).
+    We keep it as ``tuple[dict, ...]`` because dicts give callers structural
+    access without a proliferation of per-kind dataclasses; the outer tuple is
+    what makes the bundle hashable as a container. The dicts themselves are
+    treated as read-only by downstream code — mutation is a bug, not a feature.
+    """
+
     hits: tuple[dict, ...]
     stages: tuple[str, ...]
     notes: tuple[str, ...] = ()
