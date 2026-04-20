@@ -82,6 +82,8 @@ Every ADR uses the same six sections in this order:
 | [ADR-002](ADR-002-wal-page1-corruption-policy.md) | Accepted | WAL mode + inject corruption inside page 1 after a TRUNCATE checkpoint.        |
 | [ADR-003](ADR-003-target-kind-split.md)           | Accepted | `events.target_kind` intentionally unconstrained; `decisions.target_kind` hard-CHECKed to `{memory,claim,source}`. |
 | [ADR-004](ADR-004-claim-dedup-includes-source-id.md) | Accepted | `claims.content_hash` includes `source_id`; identical triple under different sources is two rows by design. |
+| [ADR-005](ADR-005-claim-content-hash-user-id-scope.md) | Accepted | `claims.content_hash` also scopes to `user_id`; supersedes ADR-004's 4-part formula with a 5-part formula + 3-column UNIQUE index. |
+| [ADR-006](ADR-006-retrieval-filtered-pipeline.md) | Proposed | xcouncil Phase 1 retrieval-filtered pipeline: six-intent closed set (priority INITIAL) + two-layer router (initial thresholds `>= 0.80` / `>= 0.70`, calibration-on-Accepted) + MMR fallback as empirically-monitored floor (`fallback_e2e >= 0.95 × baseline` CI gate) + evidence-only answerer with `insufficient_evidence` abstain token + six-number A/B tuple including `fallback_e2e`. |
 
 ## When to write a new ADR
 

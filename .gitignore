@@ -47,3 +47,8 @@ migration/
 
 # Pre-migration backups
 *.pre-migration.backup*/
+
+# Local DB / vault / obsidian
+db/
+.obsidian/
+__pycache__/
