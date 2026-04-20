@@ -25,6 +25,10 @@ db/*.db
 .coverage
 htmlcov/
 
+# Eval logs (large run outputs)
+eval/results/*.log
+*.log
+
 # Editors
 .vscode/
 .idea/
