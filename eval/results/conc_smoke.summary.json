@@ -1,0 +1,15 @@
+{
+  "total": 5,
+  "accuracy": 1.0,
+  "verdicts": {
+    "CORRECT": 5
+  },
+  "by_type": {
+    "temporal-reasoning": {
+      "CORRECT": 5
+    }
+  },
+  "tokens_in": 37879,
+  "tokens_out": 148,
+  "elapsed_sec": 11.6
+}

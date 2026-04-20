@@ -470,3 +470,29 @@ All four must hold:
 - Cerebral Valley "Built with Opus 4.7" Claude Code hackathon
   window 2026-04-21 to 2026-04-26 — target ship date for the
   Phase 1 A/B baseline.
+
+## Implementation Notes (Day-0, 2026-04-20)
+
+**Note 1 — Intent routing pragmatism (pre-embedding infra):**
+Until a production-grade semantic embedding layer ships (targeted
+post-hackathon), the three intent classes below route to the generic
+fallback retriever rather than specialised pipelines:
+
+- `preference`
+- `user_fact`
+- `knowledge_update`
+
+Rationale: each needs a bespoke retriever (contradiction detection,
+latest-wins dedup, entity-scoped search) whose quality depends on semantic
+embeddings we have not yet validated at scale. Shipping them on BM25 +
+rules would regress `fallback_e2e` below the 0.817 CI floor. Day-3 work
+explicitly skips these intents; Phase 2 re-opens them once infra lands.
+
+**Note 2 — Fallback evidence budget:**
+`MAX_EVIDENCE_TOKENS = 6000` is a hard ceiling enforced in
+`parallax/retrieval/retrievers.py::fallback_retrieve`, applied in
+conjunction with `K_MAX = 32` hits. Token estimation uses the cheap
+`len(text) / 4` heuristic. Items exceeding the budget are dropped from the
+tail (after recency top-3 is pinned to the front) so the highest-signal
+context survives. This protects against model context overflow on long
+corpora and was not specified in the original ADR body.

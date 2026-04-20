@@ -1,0 +1,32 @@
+{
+  "total": 334,
+  "accuracy": 0.8892215568862275,
+  "verdicts": {
+    "CORRECT": 297,
+    "INCORRECT": 34,
+    "ERROR": 3
+  },
+  "by_type": {
+    "multi-session": {
+      "CORRECT": 59,
+      "INCORRECT": 8
+    },
+    "temporal-reasoning": {
+      "CORRECT": 111,
+      "INCORRECT": 21,
+      "ERROR": 1
+    },
+    "knowledge-update": {
+      "CORRECT": 74,
+      "INCORRECT": 4
+    },
+    "single-session-assistant": {
+      "CORRECT": 53,
+      "ERROR": 2,
+      "INCORRECT": 1
+    }
+  },
+  "tokens_in": 36568504,
+  "tokens_out": 8741,
+  "elapsed_sec": 401.2
+}

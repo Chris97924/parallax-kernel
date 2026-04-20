@@ -1,0 +1,21 @@
+{
+  "total": 92,
+  "accuracy": 0.8695652173913043,
+  "verdicts": {
+    "CORRECT": 80,
+    "INCORRECT": 12
+  },
+  "by_type": {
+    "temporal-reasoning": {
+      "CORRECT": 17,
+      "INCORRECT": 4
+    },
+    "multi-session": {
+      "CORRECT": 63,
+      "INCORRECT": 8
+    }
+  },
+  "tokens_in": 638126,
+  "tokens_out": 2277,
+  "elapsed_sec": 65.7
+}

@@ -1,0 +1,804 @@
+2026-04-20 01:25:14,724 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[rejudge] src=s_baseline.jsonl total=500 pending=494 judge=gemini-3.1-pro-preview concurrency=2
+[1/494] c5e8278d type=single-session-use verdict=CORRECT   dt=  5.1s
+2026-04-20 01:25:18,671 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[2/494] f8c5f88b type=single-session-use verdict=CORRECT   dt=  5.8s
+[3/494] 1e043500 type=single-session-use verdict=CORRECT   dt=  4.9s
+2026-04-20 01:25:23,538 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[4/494] 58bf7951 type=single-session-use verdict=CORRECT   dt=  5.0s
+[5/494] 51a45a95 type=single-session-use verdict=CORRECT   dt=  4.5s
+[6/494] 118b2229 type=single-session-use verdict=CORRECT   dt=  3.9s
+2026-04-20 01:25:28,012 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[7/494] 6ade9755 type=single-session-use verdict=CORRECT   dt=  3.9s
+2026-04-20 01:25:32,158 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[8/494] e47becba type=single-session-use verdict=CORRECT   dt=  4.7s
+[9/494] 6f9b354f type=single-session-use verdict=CORRECT   dt=  4.6s
+[10/494] 5d3d2817 type=single-session-use verdict=CORRECT   dt=  4.2s
+2026-04-20 01:25:36,827 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[11/494] 7527f7e2 type=single-session-use verdict=CORRECT   dt=  3.7s
+2026-04-20 01:25:40,610 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[12/494] 58ef2f1c type=single-session-use verdict=CORRECT   dt=  5.4s
+[13/494] c960da58 type=single-session-use verdict=CORRECT   dt=  4.1s
+2026-04-20 01:25:44,746 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[14/494] 3b6f954b type=single-session-use verdict=CORRECT   dt=  4.5s
+[15/494] 726462e0 type=single-session-use verdict=CORRECT   dt=  4.1s
+2026-04-20 01:25:48,852 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[16/494] 94f70d80 type=single-session-use verdict=CORRECT   dt=  4.1s
+[17/494] ad7109d1 type=single-session-use verdict=CORRECT   dt=  5.1s
+2026-04-20 01:25:53,994 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[18/494] 66f24dbb type=single-session-use verdict=INCORRECT dt=  4.4s
+[19/494] dccbc061 type=single-session-use verdict=CORRECT   dt=  2.9s
+2026-04-20 01:25:58,087 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[20/494] af8d2e46 type=single-session-use verdict=CORRECT   dt=  5.5s
+[21/494] 21436231 type=single-session-use verdict=CORRECT   dt=  4.4s
+2026-04-20 01:26:03,960 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[22/494] c8c3f81d type=single-session-use verdict=CORRECT   dt=  6.5s
+[23/494] 75499fd8 type=single-session-use verdict=CORRECT   dt=  3.7s
+2026-04-20 01:26:08,231 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[24/494] 6b168ec8 type=single-session-use verdict=CORRECT   dt=  5.2s
+[25/494] 0862e8bf type=single-session-use verdict=CORRECT   dt=  3.9s
+2026-04-20 01:26:13,092 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[26/494] 95bcc1c8 type=single-session-use verdict=CORRECT   dt=  5.4s
+[27/494] a06e4cfe type=single-session-use verdict=CORRECT   dt=  4.1s
+2026-04-20 01:26:17,811 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[28/494] 853b0a1d type=single-session-use verdict=CORRECT   dt=  5.3s
+[29/494] b86304ba type=single-session-use verdict=INCORRECT dt=  3.4s
+2026-04-20 01:26:21,806 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[30/494] 37d43f65 type=single-session-use verdict=CORRECT   dt=  5.9s
+[31/494] 25e5aa4f type=single-session-use verdict=CORRECT   dt=  3.3s
+[32/494] d52b4f67 type=single-session-use verdict=CORRECT   dt=  5.2s
+2026-04-20 01:26:27,069 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[33/494] 8550ddae type=single-session-use verdict=CORRECT   dt=  4.3s
+2026-04-20 01:26:31,273 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[34/494] caf9ead2 type=single-session-use verdict=CORRECT   dt=  5.2s
+[35/494] 3f1e9474 type=single-session-use verdict=CORRECT   dt=  2.8s
+2026-04-20 01:26:34,950 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[36/494] 60d45044 type=single-session-use verdict=CORRECT   dt=  5.0s
+[37/494] 86b68151 type=single-session-use verdict=CORRECT   dt=  4.8s
+2026-04-20 01:26:39,759 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[38/494] e01b8e2f type=single-session-use verdict=CORRECT   dt=  4.1s
+[39/494] bc8a6e93 type=single-session-use verdict=CORRECT   dt=  3.3s
+2026-04-20 01:26:43,607 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[40/494] 15745da0 type=single-session-use verdict=CORRECT   dt=  5.7s
+[41/494] 001be529 type=single-session-use verdict=CORRECT   dt=  4.5s
+2026-04-20 01:26:48,099 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[42/494] ccb36322 type=single-session-use verdict=CORRECT   dt=  4.8s
+[43/494] b320f3f8 type=single-session-use verdict=CORRECT   dt=  4.4s
+2026-04-20 01:26:52,577 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[44/494] 19b5f2b3 type=single-session-use verdict=CORRECT   dt=  4.8s
+[45/494] 545bd2b5 type=single-session-use verdict=CORRECT   dt=  5.1s
+2026-04-20 01:26:57,611 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[46/494] 4fd1909e type=single-session-use verdict=CORRECT   dt=  4.5s
+[47/494] 8a137a7f type=single-session-use verdict=CORRECT   dt=  4.4s
+2026-04-20 01:27:01,979 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[48/494] 86f00804 type=single-session-use verdict=CORRECT   dt=  2.9s
+[49/494] 8e9d538c type=single-session-use verdict=CORRECT   dt=  3.8s
+2026-04-20 01:27:06,218 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[50/494] 76d63226 type=single-session-use verdict=CORRECT   dt=  5.1s
+[51/494] c19f7a0b type=single-session-use verdict=CORRECT   dt=  3.4s
+2026-04-20 01:27:10,543 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[52/494] 311778f1 type=single-session-use verdict=CORRECT   dt=  4.7s
+[53/494] 29f2956b type=single-session-use verdict=CORRECT   dt=  3.6s
+2026-04-20 01:27:14,527 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[54/494] 4100d0a0 type=single-session-use verdict=INCORRECT dt=  5.1s
+[55/494] 1faac195 type=single-session-use verdict=CORRECT   dt=  4.9s
+[56/494] faba32e5 type=single-session-use verdict=CORRECT   dt=  3.9s
+2026-04-20 01:27:19,562 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[57/494] f4f1d8a4 type=single-session-use verdict=CORRECT   dt=  3.6s
+2026-04-20 01:27:23,081 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[58/494] c14c00dd type=single-session-use verdict=CORRECT   dt=  4.3s
+[59/494] 3d86fd0a type=single-session-use verdict=CORRECT   dt=  3.1s
+2026-04-20 01:27:26,912 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[60/494] 36580ce8 type=single-session-use verdict=CORRECT   dt=  4.5s
+[61/494] 0862e8bf_abs type=single-session-use verdict=CORRECT   dt=  3.2s
+2026-04-20 01:27:30,787 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[62/494] a82c026e type=single-session-use verdict=CORRECT   dt=  7.6s
+[63/494] 15745da0_abs type=single-session-use verdict=CORRECT   dt=  5.3s
+2026-04-20 01:27:36,062 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[64/494] bc8a6e93_abs type=single-session-use verdict=CORRECT   dt=  3.2s
+[65/494] 19b5f2b3_abs type=single-session-use verdict=CORRECT   dt=  5.3s
+2026-04-20 01:27:41,392 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[66/494] 29f2956b_abs type=single-session-use verdict=CORRECT   dt=  4.8s
+[67/494] 0a995998 type=multi-session      verdict=INCORRECT dt=  3.4s
+2026-04-20 01:27:46,067 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[68/494] f4f1d8a4_abs type=single-session-use verdict=CORRECT   dt=  5.9s
+[69/494] b5ef892d type=multi-session      verdict=CORRECT   dt=  2.9s
+2026-04-20 01:27:50,215 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[70/494] gpt4_59c863d7 type=multi-session      verdict=INCORRECT dt=  5.2s
+[71/494] 6d550036 type=multi-session      verdict=INCORRECT dt=  3.8s
+2026-04-20 01:27:54,020 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[72/494] e831120c type=multi-session      verdict=CORRECT   dt=  3.5s
+[73/494] gpt4_d84a3211 type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:27:58,055 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[74/494] 3a704032 type=multi-session      verdict=CORRECT   dt=  4.7s
+[75/494] gpt4_f2262a51 type=multi-session      verdict=CORRECT   dt=  4.3s
+[76/494] aae3761f type=multi-session      verdict=CORRECT   dt=  5.3s
+2026-04-20 01:28:02,948 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[77/494] c4a1ceb8 type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:28:06,644 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[78/494] dd2973ad type=multi-session      verdict=CORRECT   dt=  4.9s
+[79/494] gpt4_a56e767c type=multi-session      verdict=CORRECT   dt=  2.8s
+[80/494] 6cb6f249 type=multi-session      verdict=CORRECT   dt=  4.0s
+2026-04-20 01:28:10,748 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[81/494] 36b9f61e type=multi-session      verdict=CORRECT   dt=  3.0s
+2026-04-20 01:28:13,630 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[82/494] 46a3abf7 type=multi-session      verdict=INCORRECT dt=  5.0s
+[83/494] 28dc39ac type=multi-session      verdict=INCORRECT dt=  4.3s
+2026-04-20 01:28:17,917 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[84/494] gpt4_2f8be40d type=multi-session      verdict=INCORRECT dt=  4.8s
+[85/494] 2e6d26dc type=multi-session      verdict=CORRECT   dt=  4.4s
+2026-04-20 01:28:22,294 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[86/494] 88432d0a type=multi-session      verdict=CORRECT   dt=  3.6s
+[87/494] 80ec1f4f type=multi-session      verdict=CORRECT   dt=  4.1s
+2026-04-20 01:28:26,386 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[88/494] d23cf73b type=multi-session      verdict=CORRECT   dt=  4.2s
+[89/494] d682f1a2 type=multi-session      verdict=CORRECT   dt=  3.6s
+2026-04-20 01:28:31,792 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[90/494] gpt4_15e38248 type=multi-session      verdict=CORRECT   dt=  6.3s
+[91/494] 7024f17c type=multi-session      verdict=CORRECT   dt=  3.4s
+2026-04-20 01:28:36,069 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[92/494] gpt4_7fce9456 type=multi-session      verdict=CORRECT   dt=  5.0s
+[93/494] gpt4_2ba83207 type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:28:40,070 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[94/494] gpt4_5501fe77 type=multi-session      verdict=CORRECT   dt=  4.7s
+[95/494] gpt4_d12ceb0e type=multi-session      verdict=CORRECT   dt=  2.7s
+2026-04-20 01:28:43,471 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[96/494] 2318644b type=multi-session      verdict=CORRECT   dt=  4.7s
+[97/494] 00ca467f type=multi-session      verdict=CORRECT   dt=  4.1s
+2026-04-20 01:28:48,831 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[98/494] 2ce6a0f2 type=multi-session      verdict=CORRECT   dt=  5.8s
+[99/494] gpt4_31ff4165 type=multi-session      verdict=CORRECT   dt=  3.5s
+[100/494] b3c15d39 type=multi-session      verdict=CORRECT   dt=  4.3s
+2026-04-20 01:28:52,800 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[101/494] 60bf93ed type=multi-session      verdict=CORRECT   dt=  3.1s
+2026-04-20 01:28:56,315 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[102/494] eeda8a6d type=multi-session      verdict=CORRECT   dt=  4.9s
+[103/494] 2788b940 type=multi-session      verdict=CORRECT   dt=  4.6s
+[104/494] 9d25d4e0 type=multi-session      verdict=CORRECT   dt=  3.4s
+2026-04-20 01:29:01,142 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[105/494] 60472f9c type=multi-session      verdict=CORRECT   dt=  3.4s
+2026-04-20 01:29:04,532 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[106/494] 129d1232 type=multi-session      verdict=CORRECT   dt=  4.5s
+[107/494] d851d5ba type=multi-session      verdict=INCORRECT dt=  2.8s
+2026-04-20 01:29:08,126 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[108/494] gpt4_194be4b3 type=multi-session      verdict=CORRECT   dt=  7.3s
+[109/494] a9f6b44c type=multi-session      verdict=CORRECT   dt=  4.8s
+2026-04-20 01:29:12,882 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[110/494] 5a7937c8 type=multi-session      verdict=CORRECT   dt=  3.6s
+[111/494] gpt4_e05b82a6 type=multi-session      verdict=CORRECT   dt=  6.9s
+[112/494] gpt4_ab202e7f type=multi-session      verdict=INCORRECT dt=  4.7s
+2026-04-20 01:29:19,848 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[113/494] gpt4_731e37d7 type=multi-session      verdict=INCORRECT dt=  3.8s
+2026-04-20 01:29:24,012 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[114/494] edced276 type=multi-session      verdict=CORRECT   dt=  5.4s
+[115/494] 10d9b85a type=multi-session      verdict=CORRECT   dt=  4.5s
+2026-04-20 01:29:28,492 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[116/494] 2b8f3739 type=multi-session      verdict=CORRECT   dt=  4.5s
+[117/494] 1a8a66a6 type=multi-session      verdict=CORRECT   dt=  3.4s
+2026-04-20 01:29:33,066 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[118/494] e3038f8c type=multi-session      verdict=CORRECT   dt=  5.3s
+[119/494] c2ac3c61 type=multi-session      verdict=CORRECT   dt=  2.7s
+2026-04-20 01:29:36,286 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[120/494] bf659f65 type=multi-session      verdict=INCORRECT dt=  4.6s
+[121/494] gpt4_372c3eed type=multi-session      verdict=CORRECT   dt=  4.4s
+[122/494] gpt4_2f91af09 type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:29:40,741 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[123/494] 88432d0a_abs type=multi-session      verdict=CORRECT   dt=  3.7s
+2026-04-20 01:29:44,590 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[124/494] 81507db6 type=multi-session      verdict=CORRECT   dt=  5.4s
+[125/494] 80ec1f4f_abs type=multi-session      verdict=INCORRECT dt=  5.1s
+2026-04-20 01:29:49,704 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[126/494] eeda8a6d_abs type=multi-session      verdict=CORRECT   dt=  4.3s
+[127/494] edced276_abs type=multi-session      verdict=CORRECT   dt=  4.0s
+2026-04-20 01:29:54,396 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[128/494] 60bf93ed_abs type=multi-session      verdict=CORRECT   dt=  5.7s
+[129/494] 8a2466db type=single-session-pre verdict=CORRECT   dt=  3.8s
+2026-04-20 01:29:59,227 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[130/494] gpt4_372c3eed_abs type=multi-session      verdict=CORRECT   dt=  5.6s
+[131/494] 75832dbd type=single-session-pre verdict=INCORRECT dt=  4.2s
+[132/494] 06878be2 type=single-session-pre verdict=INCORRECT dt=  5.1s
+2026-04-20 01:30:04,339 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[133/494] 35a27287 type=single-session-pre verdict=INCORRECT dt=  3.2s
+2026-04-20 01:30:07,512 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[134/494] 0edc2aef type=single-session-pre verdict=INCORRECT dt=  5.5s
+[135/494] 32260d93 type=single-session-pre verdict=CORRECT   dt=  6.2s
+[136/494] 195a1a1b type=single-session-pre verdict=CORRECT   dt=  3.9s
+2026-04-20 01:30:13,756 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[137/494] afdc33df type=single-session-pre verdict=INCORRECT dt=  4.4s
+2026-04-20 01:30:18,257 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[138/494] caf03d32 type=single-session-pre verdict=INCORRECT dt=  6.0s
+[139/494] 54026fce type=single-session-pre verdict=CORRECT   dt=  5.9s
+2026-04-20 01:30:24,000 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[140/494] 6b7dfb22 type=single-session-pre verdict=INCORRECT dt=  5.0s
+[141/494] 1a1907b4 type=single-session-pre verdict=INCORRECT dt=  4.0s
+[142/494] 06f04340 type=single-session-pre verdict=INCORRECT dt=  4.9s
+2026-04-20 01:30:28,622 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[143/494] 38146c39 type=single-session-pre verdict=INCORRECT dt=  3.8s
+2026-04-20 01:30:32,787 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[144/494] 09d032c9 type=single-session-pre verdict=INCORRECT dt=  5.3s
+[145/494] 57f827a0 type=single-session-pre verdict=INCORRECT dt=  3.6s
+2026-04-20 01:30:37,522 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[146/494] d24813b1 type=single-session-pre verdict=CORRECT   dt=  5.2s
+[147/494] 505af2f5 type=single-session-pre verdict=INCORRECT dt=  4.3s
+2026-04-20 01:30:42,294 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[148/494] 95228167 type=single-session-pre verdict=INCORRECT dt=  6.0s
+[149/494] d6233ab6 type=single-session-pre verdict=INCORRECT dt=  3.0s
+2026-04-20 01:30:46,507 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[150/494] 75f70248 type=single-session-pre verdict=CORRECT   dt=  5.6s
+[151/494] 1da05512 type=single-session-pre verdict=INCORRECT dt=  5.5s
+2026-04-20 01:30:52,057 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[152/494] a89d7624 type=single-session-pre verdict=CORRECT   dt=  5.0s
+[153/494] b6025781 type=single-session-pre verdict=CORRECT   dt=  4.9s
+[154/494] fca70973 type=single-session-pre verdict=INCORRECT dt=  6.0s
+2026-04-20 01:30:58,064 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[155/494] 1d4e3b97 type=single-session-pre verdict=INCORRECT dt=  3.9s
+2026-04-20 01:31:01,941 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[156/494] b0479f84 type=single-session-pre verdict=CORRECT   dt=  5.7s
+[157/494] 07b6f563 type=single-session-pre verdict=INCORRECT dt=  5.4s
+[158/494] 1c0ddc50 type=single-session-pre verdict=INCORRECT dt=  4.0s
+2026-04-20 01:31:07,411 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[159/494] d3ab962e type=multi-session      verdict=CORRECT   dt=  3.0s
+2026-04-20 01:31:10,600 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[160/494] 0a34ad58 type=single-session-pre verdict=INCORRECT dt=  6.0s
+[161/494] cc06de0d type=multi-session      verdict=CORRECT   dt=  4.1s
+2026-04-20 01:31:14,693 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[162/494] 2311e44b type=multi-session      verdict=CORRECT   dt=  4.2s
+[163/494] a11281a2 type=multi-session      verdict=CORRECT   dt=  5.6s
+[164/494] 1f2b8d4f type=multi-session      verdict=CORRECT   dt=  2.7s
+2026-04-20 01:31:20,420 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[165/494] d905b33f type=multi-session      verdict=CORRECT   dt=  3.2s
+2026-04-20 01:31:23,563 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[166/494] e6041065 type=multi-session      verdict=CORRECT   dt=  5.6s
+[167/494] f35224e0 type=multi-session      verdict=CORRECT   dt=  5.0s
+2026-04-20 01:31:28,503 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[168/494] 85fa3a3f type=multi-session      verdict=CORRECT   dt=  3.3s
+[169/494] 7405e8b1 type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:31:32,475 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[170/494] 9aaed6a3 type=multi-session      verdict=CORRECT   dt=  4.7s
+[171/494] 4f54b7c9 type=multi-session      verdict=CORRECT   dt=  4.1s
+[172/494] 51c32626 type=multi-session      verdict=INCORRECT dt=  5.1s
+2026-04-20 01:31:37,351 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[173/494] 3c1045c8 type=multi-session      verdict=CORRECT   dt=  4.4s
+[174/494] 60036106 type=multi-session      verdict=CORRECT   dt=  4.2s
+2026-04-20 01:31:41,767 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[175/494] e25c3b8d type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:31:45,111 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[176/494] a4996e51 type=multi-session      verdict=CORRECT   dt=  4.7s
+[177/494] 6456829e type=multi-session      verdict=INCORRECT dt=  4.2s
+2026-04-20 01:31:49,367 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[178/494] 4adc0475 type=multi-session      verdict=CORRECT   dt=  4.6s
+[179/494] 681a1674 type=multi-session      verdict=CORRECT   dt=  2.8s
+2026-04-20 01:31:53,823 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[180/494] 4bc144e2 type=multi-session      verdict=CORRECT   dt=  6.5s
+[181/494] ef66a6e5 type=multi-session      verdict=CORRECT   dt=  4.2s
+2026-04-20 01:31:58,007 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[182/494] 5025383b type=multi-session      verdict=CORRECT   dt=  2.9s
+[183/494] a1cc6108 type=multi-session      verdict=CORRECT   dt=  2.8s
+2026-04-20 01:32:01,437 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[184/494] 9ee3ecd6 type=multi-session      verdict=INCORRECT dt=  4.6s
+[185/494] 91b15a6e type=multi-session      verdict=CORRECT   dt=  2.8s
+[186/494] 27016adc type=multi-session      verdict=CORRECT   dt=  4.1s
+2026-04-20 01:32:05,391 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[187/494] 3fdac837 type=multi-session      verdict=CORRECT   dt=  2.9s
+2026-04-20 01:32:08,466 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[188/494] 720133ac type=multi-session      verdict=CORRECT   dt=  5.4s
+[189/494] 8979f9ec type=multi-session      verdict=CORRECT   dt=  4.0s
+2026-04-20 01:32:12,481 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[190/494] 77eafa52 type=multi-session      verdict=CORRECT   dt=  4.3s
+[191/494] 0100672e type=multi-session      verdict=CORRECT   dt=  5.3s
+2026-04-20 01:32:17,804 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[192/494] a96c20ee type=multi-session      verdict=CORRECT   dt=  3.7s
+[193/494] 0ea62687 type=multi-session      verdict=CORRECT   dt=  2.6s
+2026-04-20 01:32:21,406 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[194/494] 3fe836c9 type=multi-session      verdict=CORRECT   dt=  4.3s
+[195/494] 1192316e type=multi-session      verdict=CORRECT   dt=  4.4s
+[196/494] 92a0aa75 type=multi-session      verdict=CORRECT   dt=  3.8s
+2026-04-20 01:32:25,864 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[197/494] 6c49646a type=multi-session      verdict=CORRECT   dt=  3.4s
+2026-04-20 01:32:29,527 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[198/494] 1c549ce4 type=multi-session      verdict=CORRECT   dt=  6.4s
+[199/494] 67e0d0f2 type=multi-session      verdict=CORRECT   dt=  5.3s
+2026-04-20 01:32:34,828 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[200/494] bb7c3b45 type=multi-session      verdict=CORRECT   dt=  4.1s
+[201/494] ba358f49 type=multi-session      verdict=CORRECT   dt=  5.3s
+[202/494] 61f8c8f8 type=multi-session      verdict=CORRECT   dt=  4.0s
+2026-04-20 01:32:40,154 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[203/494] 099778bb type=multi-session      verdict=CORRECT   dt=  3.3s
+2026-04-20 01:32:43,824 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[204/494] bc149d6b type=multi-session      verdict=CORRECT   dt=  4.7s
+[205/494] ef9cf60a type=multi-session      verdict=CORRECT   dt=  4.5s
+2026-04-20 01:32:49,284 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[206/494] 60159905 type=multi-session      verdict=CORRECT   dt=  6.9s
+[207/494] 09ba9854 type=multi-session      verdict=INCORRECT dt=  5.2s
+2026-04-20 01:32:54,714 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[208/494] 157a136e type=multi-session      verdict=CORRECT   dt=  5.1s
+[209/494] d6062bb9 type=multi-session      verdict=CORRECT   dt=  4.3s
+2026-04-20 01:32:59,973 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[210/494] 73d42213 type=multi-session      verdict=CORRECT   dt=  6.5s
+[211/494] a3332713 type=multi-session      verdict=CORRECT   dt=  4.3s
+2026-04-20 01:33:05,026 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[212/494] c18a7dc8 type=multi-session      verdict=CORRECT   dt=  6.2s
+[213/494] 55241a1f type=multi-session      verdict=CORRECT   dt=  3.0s
+2026-04-20 01:33:08,941 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[214/494] a08a253f type=multi-session      verdict=INCORRECT dt=  4.6s
+[215/494] f0e564bc type=multi-session      verdict=CORRECT   dt=  4.0s
+[216/494] 078150f1 type=multi-session      verdict=CORRECT   dt=  4.9s
+2026-04-20 01:33:13,645 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[217/494] 8cf4d046 type=multi-session      verdict=CORRECT   dt=  3.8s
+2026-04-20 01:33:17,562 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[218/494] a346bb18 type=multi-session      verdict=CORRECT   dt=  4.6s
+[219/494] 8e91e7d9 type=multi-session      verdict=CORRECT   dt=  3.2s
+2026-04-20 01:33:21,458 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[220/494] 37f165cf type=multi-session      verdict=INCORRECT dt=  4.3s
+[221/494] 87f22b4a type=multi-session      verdict=CORRECT   dt=  3.1s
+2026-04-20 01:33:25,102 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[222/494] e56a43b9 type=multi-session      verdict=CORRECT   dt=  6.1s
+[223/494] 2311e44b_abs type=multi-session      verdict=CORRECT   dt=  5.4s
+2026-04-20 01:33:30,514 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[224/494] 21d02d0d type=multi-session      verdict=CORRECT   dt=  4.8s
+[225/494] efc3f7c2 type=multi-session      verdict=CORRECT   dt=  5.0s
+2026-04-20 01:33:35,588 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[226/494] 6456829e_abs type=multi-session      verdict=CORRECT   dt=  5.4s
+[227/494] a96c20ee_abs type=multi-session      verdict=INCORRECT dt=  3.8s
+[228/494] e5ba910e_abs type=multi-session      verdict=CORRECT   dt=  6.5s
+2026-04-20 01:33:41,798 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[229/494] 09ba9854_abs type=multi-session      verdict=INCORRECT dt=  3.6s
+2026-04-20 01:33:45,740 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[230/494] ba358f49_abs type=multi-session      verdict=CORRECT   dt=  5.0s
+[231/494] b46e15ed type=temporal-reasoning verdict=INCORRECT dt=  3.4s
+2026-04-20 01:33:50,164 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[232/494] gpt4_59149c77 type=temporal-reasoning verdict=CORRECT   dt=  5.2s
+[233/494] 71017276 type=temporal-reasoning verdict=CORRECT   dt=  4.5s
+[234/494] gpt4_f49edff3 type=temporal-reasoning verdict=INCORRECT dt=  5.5s
+2026-04-20 01:33:55,567 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[235/494] 0bc8ad92 type=temporal-reasoning verdict=CORRECT   dt=  3.3s
+2026-04-20 01:33:58,961 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[236/494] gpt4_fa19884c type=temporal-reasoning verdict=CORRECT   dt=  6.0s
+[237/494] gpt4_4929293a type=temporal-reasoning verdict=CORRECT   dt=  2.8s
+[238/494] af082822 type=temporal-reasoning verdict=CORRECT   dt=  5.4s
+2026-04-20 01:34:04,469 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[239/494] gpt4_1d4ab0c9 type=temporal-reasoning verdict=CORRECT   dt=  2.9s
+2026-04-20 01:34:07,216 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[240/494] gpt4_b5700ca9 type=temporal-reasoning verdict=CORRECT   dt=  5.1s
+[241/494] gpt4_e072b769 type=temporal-reasoning verdict=CORRECT   dt=  4.7s
+[242/494] 0db4c65d type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:34:11,920 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[243/494] gpt4_1d80365e type=temporal-reasoning verdict=INCORRECT dt=  5.4s
+[244/494] 9a707b81 type=temporal-reasoning verdict=INCORRECT dt=  6.2s
+2026-04-20 01:34:17,992 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[245/494] gpt4_6dc9b45b type=temporal-reasoning verdict=CORRECT   dt=  3.5s
+2026-04-20 01:34:21,550 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[246/494] gpt4_8279ba02 type=temporal-reasoning verdict=CORRECT   dt=  6.0s
+[247/494] gpt4_7f6b06db type=temporal-reasoning verdict=INCORRECT dt=  5.6s
+2026-04-20 01:34:27,091 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[248/494] gpt4_18c2b244 type=temporal-reasoning verdict=CORRECT   dt=  4.2s
+[249/494] gpt4_468eb063 type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+[250/494] gpt4_7a0daae1 type=temporal-reasoning verdict=CORRECT   dt=  4.4s
+2026-04-20 01:34:32,116 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[251/494] gpt4_1916e0ea type=temporal-reasoning verdict=INCORRECT dt=  3.4s
+2026-04-20 01:34:35,911 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[252/494] gpt4_a1b77f9c type=temporal-reasoning verdict=CORRECT   dt=  6.9s
+[253/494] gpt4_1e4a8aeb type=temporal-reasoning verdict=CORRECT   dt=  4.6s
+2026-04-20 01:34:40,409 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[254/494] gpt4_7abb270c type=temporal-reasoning verdict=INCORRECT dt=  3.1s
+[255/494] 4dfccbf7 type=temporal-reasoning verdict=CORRECT   dt=  3.2s
+[256/494] gpt4_4fc4f797 type=temporal-reasoning verdict=CORRECT   dt=  5.5s
+2026-04-20 01:34:45,370 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[257/494] 2ebe6c90 type=temporal-reasoning verdict=CORRECT   dt=  3.3s
+2026-04-20 01:34:49,188 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[258/494] gpt4_61e13b3c type=temporal-reasoning verdict=CORRECT   dt=  4.5s
+[259/494] gpt4_e061b84f type=temporal-reasoning verdict=CORRECT   dt=  3.3s
+2026-04-20 01:34:53,146 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[260/494] gpt4_45189cb4 type=temporal-reasoning verdict=INCORRECT dt=  4.8s
+[261/494] gpt4_ec93e27f type=temporal-reasoning verdict=CORRECT   dt=  4.3s
+2026-04-20 01:34:58,234 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[262/494] gpt4_d6585ce8 type=temporal-reasoning verdict=INCORRECT dt=  5.7s
+[263/494] 6e984301 type=temporal-reasoning verdict=CORRECT   dt=  3.2s
+2026-04-20 01:35:02,139 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[264/494] 370a8ff4 type=temporal-reasoning verdict=INCORRECT dt=  5.0s
+[265/494] gpt4_8e165409 type=temporal-reasoning verdict=CORRECT   dt=  3.6s
+[266/494] gpt4_4ef30696 type=temporal-reasoning verdict=CORRECT   dt=  5.2s
+2026-04-20 01:35:06,862 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[267/494] 8077ef71 type=temporal-reasoning verdict=CORRECT   dt=  3.2s
+2026-04-20 01:35:10,507 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[268/494] gpt4_f420262c type=temporal-reasoning verdict=INCORRECT dt=  4.8s
+[269/494] bcbe585f type=temporal-reasoning verdict=INCORRECT dt=  3.5s
+[270/494] gpt4_74aed68e type=temporal-reasoning verdict=CORRECT   dt=  4.7s
+2026-04-20 01:35:15,303 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[271/494] gpt4_af6db32f type=temporal-reasoning verdict=CORRECT   dt=  3.6s
+2026-04-20 01:35:18,888 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[272/494] 5e1b23de type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+[273/494] gpt4_98f46fc6 type=temporal-reasoning verdict=CORRECT   dt=  3.4s
+[274/494] gpt4_21adecb5 type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+2026-04-20 01:35:23,445 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[275/494] gpt4_7ddcf75f type=temporal-reasoning verdict=CORRECT   dt=  3.5s
+2026-04-20 01:35:27,059 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[276/494] gpt4_a2d1d1f6 type=temporal-reasoning verdict=CORRECT   dt=  5.4s
+[277/494] gpt4_b0863698 type=temporal-reasoning verdict=INCORRECT dt=  4.7s
+[278/494] gpt4_68e94287 type=temporal-reasoning verdict=CORRECT   dt=  3.4s
+2026-04-20 01:35:31,771 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[279/494] gpt4_e414231e type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:35:35,306 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[280/494] gpt4_85da3956 type=temporal-reasoning verdict=CORRECT   dt=  5.2s
+[281/494] gpt4_7bc6cf22 type=temporal-reasoning verdict=CORRECT   dt=  6.3s
+[282/494] gpt4_7ca326fa type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+2026-04-20 01:35:41,648 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[283/494] 2ebe6c92 type=temporal-reasoning verdict=CORRECT   dt=  4.7s
+2026-04-20 01:35:46,286 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[284/494] gpt4_e061b84g type=temporal-reasoning verdict=CORRECT   dt=  5.3s
+[285/494] 71017277 type=temporal-reasoning verdict=INCORRECT dt=  2.9s
+2026-04-20 01:35:49,952 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[286/494] b46e15ee type=temporal-reasoning verdict=CORRECT   dt=  5.9s
+[287/494] gpt4_d6585ce9 type=temporal-reasoning verdict=CORRECT   dt=  5.6s
+2026-04-20 01:35:55,605 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[288/494] gpt4_1e4a8aec type=temporal-reasoning verdict=CORRECT   dt=  5.4s
+[289/494] gpt4_59149c78 type=temporal-reasoning verdict=INCORRECT dt=  3.0s
+2026-04-20 01:36:00,591 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[290/494] gpt4_f420262d type=temporal-reasoning verdict=CORRECT   dt=  6.3s
+[291/494] gpt4_468eb064 type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:36:04,971 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[292/494] gpt4_e414231f type=temporal-reasoning verdict=CORRECT   dt=  5.4s
+[293/494] gpt4_4929293b type=temporal-reasoning verdict=CORRECT   dt=  3.6s
+2026-04-20 01:36:09,573 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[294/494] 4dfccbf8 type=temporal-reasoning verdict=CORRECT   dt=  5.3s
+[295/494] gpt4_fa19884d type=temporal-reasoning verdict=INCORRECT dt=  3.1s
+2026-04-20 01:36:13,301 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[296/494] 0bc8ad93 type=temporal-reasoning verdict=INCORRECT dt=  4.9s
+[297/494] 9a707b82 type=temporal-reasoning verdict=CORRECT   dt=  3.3s
+2026-04-20 01:36:17,735 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[298/494] eac54add type=temporal-reasoning verdict=INCORRECT dt=  5.0s
+[299/494] gpt4_8279ba03 type=temporal-reasoning verdict=CORRECT   dt=  3.9s
+2026-04-20 01:36:22,236 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[300/494] 6e984302 type=temporal-reasoning verdict=CORRECT   dt=  7.3s
+[301/494] gpt4_2655b836 type=temporal-reasoning verdict=CORRECT   dt=  5.0s
+2026-04-20 01:36:27,263 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[302/494] gpt4_68e94288 type=temporal-reasoning verdict=CORRECT   dt=  2.9s
+[303/494] gpt4_76048e76 type=temporal-reasoning verdict=CORRECT   dt=  5.0s
+2026-04-20 01:36:32,191 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[304/494] gpt4_b5700ca0 type=temporal-reasoning verdict=CORRECT   dt=  8.5s
+[305/494] gpt4_2487a7cb type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+2026-04-20 01:36:37,051 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[306/494] eac54adc type=temporal-reasoning verdict=CORRECT   dt=  5.1s
+[307/494] gpt4_2312f94c type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+2026-04-20 01:36:41,957 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[308/494] 0bb5a684 type=temporal-reasoning verdict=CORRECT   dt=  3.7s
+[309/494] bbf86515 type=temporal-reasoning verdict=CORRECT   dt=  5.2s
+2026-04-20 01:36:47,167 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[310/494] gpt4_385a5000 type=temporal-reasoning verdict=CORRECT   dt=  4.0s
+[311/494] 08f4fc43 type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+[312/494] 2a1811e2 type=temporal-reasoning verdict=CORRECT   dt=  3.0s
+2026-04-20 01:36:52,253 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[313/494] 2c63a862 type=temporal-reasoning verdict=CORRECT   dt=  4.4s
+2026-04-20 01:36:56,591 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[314/494] gpt4_5dcc0aab type=temporal-reasoning verdict=CORRECT   dt=  5.6s
+[315/494] f0853d11 type=temporal-reasoning verdict=CORRECT   dt=  3.8s
+[316/494] gpt4_0b2f1d21 type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+2026-04-20 01:37:01,601 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[317/494] gpt4_70e84552 type=temporal-reasoning verdict=CORRECT   dt=  4.2s
+2026-04-20 01:37:05,628 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[318/494] gpt4_6ed717ea type=temporal-reasoning verdict=CORRECT   dt=  5.9s
+[319/494] gpt4_93159ced type=temporal-reasoning verdict=CORRECT   dt=  3.6s
+[320/494] gpt4_2d58bcd6 type=temporal-reasoning verdict=CORRECT   dt=  5.6s
+2026-04-20 01:37:11,014 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[321/494] b9cfe692 type=temporal-reasoning verdict=CORRECT   dt=  3.9s
+2026-04-20 01:37:15,049 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[322/494] a3838d2b type=temporal-reasoning verdict=CORRECT   dt=  8.0s
+[323/494] gpt4_65aabe59 type=temporal-reasoning verdict=CORRECT   dt=  6.0s
+2026-04-20 01:37:21,085 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[324/494] 982b5123 type=temporal-reasoning verdict=CORRECT   dt=  3.2s
+[325/494] gpt4_4edbafa2 type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:37:25,135 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[326/494] c8090214 type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+[327/494] dcfa8644 type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:37:28,885 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[328/494] gpt4_483dd43c type=temporal-reasoning verdict=CORRECT   dt=  5.6s
+[329/494] e4e14d04 type=temporal-reasoning verdict=CORRECT   dt=  4.7s
+[330/494] c9f37c46 type=temporal-reasoning verdict=CORRECT   dt=  3.1s
+2026-04-20 01:37:33,709 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[331/494] gpt4_8c8961ae type=temporal-reasoning verdict=CORRECT   dt=  3.8s
+2026-04-20 01:37:37,497 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[332/494] gpt4_2c50253f type=temporal-reasoning verdict=CORRECT   dt=  5.7s
+[333/494] gpt4_9a159967 type=temporal-reasoning verdict=INCORRECT dt=  3.6s
+2026-04-20 01:37:42,854 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[334/494] gpt4_b4a80587 type=temporal-reasoning verdict=CORRECT   dt=  7.0s
+[335/494] cc6d1ec1 type=temporal-reasoning verdict=CORRECT   dt=  4.6s
+2026-04-20 01:37:47,521 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[336/494] gpt4_d9af6064 type=temporal-reasoning verdict=CORRECT   dt=  4.4s
+[337/494] gpt4_7de946e7 type=temporal-reasoning verdict=CORRECT   dt=  5.0s
+[338/494] 993da5e2 type=temporal-reasoning verdict=CORRECT   dt=  3.8s
+2026-04-20 01:37:52,737 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[339/494] gpt4_d31cdae3 type=temporal-reasoning verdict=CORRECT   dt=  3.4s
+2026-04-20 01:37:56,124 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[340/494] d01c6aa8 type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+[341/494] gpt4_cd90e484 type=temporal-reasoning verdict=CORRECT   dt=  4.3s
+2026-04-20 01:38:00,495 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[342/494] a3045048 type=temporal-reasoning verdict=CORRECT   dt=  3.9s
+[343/494] gpt4_4cd9eba1 type=temporal-reasoning verdict=CORRECT   dt=  3.0s
+2026-04-20 01:38:04,252 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[344/494] gpt4_88806d6e type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+[345/494] 6613b389 type=temporal-reasoning verdict=CORRECT   dt=  3.3s
+2026-04-20 01:38:08,695 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[346/494] gpt4_93f6379c type=temporal-reasoning verdict=CORRECT   dt=  6.9s
+[347/494] gpt4_78cf46a3 type=temporal-reasoning verdict=CORRECT   dt=  4.5s
+2026-04-20 01:38:13,172 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[348/494] gpt4_2f56ae70 type=temporal-reasoning verdict=INCORRECT dt=  3.5s
+[349/494] b29f3365 type=temporal-reasoning verdict=CORRECT   dt=  2.9s
+2026-04-20 01:38:17,556 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[350/494] gpt4_1a1dc16d type=temporal-reasoning verdict=CORRECT   dt=  5.3s
+[351/494] gpt4_213fd887 type=temporal-reasoning verdict=CORRECT   dt=  4.5s
+[352/494] gpt4_0a05b494 type=temporal-reasoning verdict=CORRECT   dt=  3.9s
+2026-04-20 01:38:22,208 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[353/494] gpt4_c27434e8 type=temporal-reasoning verdict=CORRECT   dt=  3.4s
+2026-04-20 01:38:25,723 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[354/494] gpt4_5438fa52 type=temporal-reasoning verdict=CORRECT   dt=  4.8s
+[355/494] gpt4_fe651585 type=temporal-reasoning verdict=CORRECT   dt=  3.7s
+2026-04-20 01:38:30,570 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[356/494] 8c18457d type=temporal-reasoning verdict=CORRECT   dt=  5.6s
+[357/494] 982b5123_abs type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+2026-04-20 01:38:35,495 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[358/494] gpt4_70e84552_abs type=temporal-reasoning verdict=CORRECT   dt=  4.9s
+[359/494] c8090214_abs type=temporal-reasoning verdict=CORRECT   dt=  4.7s
+2026-04-20 01:38:40,887 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[360/494] gpt4_93159ced_abs type=temporal-reasoning verdict=CORRECT   dt=  6.4s
+[361/494] 6aeb4375 type=knowledge-update   verdict=CORRECT   dt=  4.5s
+2026-04-20 01:38:46,354 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[362/494] gpt4_c27434e8_abs type=temporal-reasoning verdict=CORRECT   dt=  6.9s
+[363/494] 6a1eabeb type=knowledge-update   verdict=CORRECT   dt=  4.9s
+[364/494] gpt4_fe651585_abs type=temporal-reasoning verdict=CORRECT   dt=  3.9s
+2026-04-20 01:38:51,412 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[365/494] 830ce83f type=knowledge-update   verdict=CORRECT   dt=  4.0s
+2026-04-20 01:38:55,507 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[366/494] 852ce960 type=knowledge-update   verdict=INCORRECT dt=  5.1s
+[367/494] d7c942c3 type=knowledge-update   verdict=CORRECT   dt=  3.6s
+2026-04-20 01:38:59,696 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[368/494] 945e3d21 type=knowledge-update   verdict=CORRECT   dt=  5.2s
+[369/494] 71315a70 type=knowledge-update   verdict=CORRECT   dt=  4.3s
+[370/494] 89941a93 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+2026-04-20 01:39:04,192 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[371/494] 9ea5eabc type=knowledge-update   verdict=CORRECT   dt=  4.9s
+[372/494] ce6d2d27 type=knowledge-update   verdict=INCORRECT dt=  4.7s
+2026-04-20 01:39:08,951 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[373/494] 184da446 type=knowledge-update   verdict=CORRECT   dt=  3.9s
+2026-04-20 01:39:13,189 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[374/494] a1eacc2a type=knowledge-update   verdict=CORRECT   dt=  5.5s
+[375/494] 031748ae type=knowledge-update   verdict=CORRECT   dt=  4.0s
+[376/494] 07741c44 type=knowledge-update   verdict=CORRECT   dt=  5.6s
+2026-04-20 01:39:18,728 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[377/494] 0f05491a type=knowledge-update   verdict=CORRECT   dt=  3.7s
+2026-04-20 01:39:22,623 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[378/494] 4d6b87c8 type=knowledge-update   verdict=CORRECT   dt=  4.7s
+[379/494] 2698e78f type=knowledge-update   verdict=CORRECT   dt=  3.2s
+[380/494] 08e075c7 type=knowledge-update   verdict=CORRECT   dt=  4.6s
+2026-04-20 01:39:26,493 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[381/494] 5a4f22c0 type=knowledge-update   verdict=CORRECT   dt=  4.0s
+[382/494] 41698283 type=knowledge-update   verdict=CORRECT   dt=  4.9s
+2026-04-20 01:39:31,192 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[383/494] b6019101 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+2026-04-20 01:39:35,330 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[384/494] 45dc21b6 type=knowledge-update   verdict=CORRECT   dt=  5.1s
+[385/494] 6071bd76 type=knowledge-update   verdict=CORRECT   dt=  3.6s
+2026-04-20 01:39:39,819 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[386/494] f9e8c073 type=knowledge-update   verdict=INCORRECT dt=  7.5s
+[387/494] e493bb7c type=knowledge-update   verdict=CORRECT   dt=  5.7s
+[388/494] 01493427 type=knowledge-update   verdict=CORRECT   dt=  2.9s
+2026-04-20 01:39:45,632 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[389/494] 72e3ee87 type=knowledge-update   verdict=CORRECT   dt=  4.6s
+2026-04-20 01:39:50,478 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[390/494] 6a27ffc2 type=knowledge-update   verdict=CORRECT   dt=  6.0s
+[391/494] 2133c1b5 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+2026-04-20 01:39:55,293 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[392/494] c4ea545c type=knowledge-update   verdict=CORRECT   dt=  5.6s
+[393/494] 18bc8abd type=knowledge-update   verdict=CORRECT   dt=  3.1s
+2026-04-20 01:39:58,982 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[394/494] 618f13b2 type=knowledge-update   verdict=CORRECT   dt=  6.1s
+[395/494] 7a87bd0c type=knowledge-update   verdict=CORRECT   dt=  4.5s
+2026-04-20 01:40:03,539 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[396/494] db467c8c type=knowledge-update   verdict=CORRECT   dt=  3.0s
+[397/494] e61a7584 type=knowledge-update   verdict=CORRECT   dt=  3.4s
+2026-04-20 01:40:07,771 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[398/494] 1cea1afa type=knowledge-update   verdict=CORRECT   dt=  5.4s
+[399/494] 8fb83627 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+[400/494] ed4ddc30 type=knowledge-update   verdict=CORRECT   dt=  5.3s
+2026-04-20 01:40:12,940 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[401/494] 0e4e4c46 type=knowledge-update   verdict=CORRECT   dt=  3.3s
+2026-04-20 01:40:16,264 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[402/494] b01defab type=knowledge-update   verdict=CORRECT   dt=  5.8s
+[403/494] 4b24c848 type=knowledge-update   verdict=CORRECT   dt=  3.2s
+2026-04-20 01:40:21,844 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[404/494] 22d2cb42 type=knowledge-update   verdict=INCORRECT dt=  7.0s
+[405/494] 7e974930 type=knowledge-update   verdict=CORRECT   dt=  5.6s
+2026-04-20 01:40:27,449 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[406/494] 603deb26 type=knowledge-update   verdict=CORRECT   dt=  4.9s
+[407/494] eace081b type=knowledge-update   verdict=CORRECT   dt=  3.6s
+2026-04-20 01:40:32,059 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[408/494] 5831f84d type=knowledge-update   verdict=CORRECT   dt=  5.9s
+[409/494] affe2881 type=knowledge-update   verdict=CORRECT   dt=  3.0s
+2026-04-20 01:40:36,301 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[410/494] 59524333 type=knowledge-update   verdict=CORRECT   dt=  6.3s
+[411/494] 50635ada type=knowledge-update   verdict=CORRECT   dt=  5.6s
+2026-04-20 01:40:41,956 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[412/494] f685340e type=knowledge-update   verdict=CORRECT   dt=  5.3s
+[413/494] e66b632c type=knowledge-update   verdict=CORRECT   dt=  3.5s
+[414/494] 0ddfec37 type=knowledge-update   verdict=CORRECT   dt=  5.4s
+2026-04-20 01:40:47,058 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[415/494] dfde3500 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+[416/494] cc5ded98 type=knowledge-update   verdict=CORRECT   dt=  4.4s
+2026-04-20 01:40:51,212 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[417/494] 69fee5aa type=knowledge-update   verdict=CORRECT   dt=  4.3s
+2026-04-20 01:40:55,661 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[418/494] 7401057b type=knowledge-update   verdict=CORRECT   dt=  5.2s
+[419/494] c7dc5443 type=knowledge-update   verdict=CORRECT   dt=  3.9s
+2026-04-20 01:41:00,221 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[420/494] cf22b7bf type=knowledge-update   verdict=CORRECT   dt=  5.7s
+[421/494] 06db6396 type=knowledge-update   verdict=CORRECT   dt=  6.4s
+[422/494] a2f3aa27 type=knowledge-update   verdict=INCORRECT dt=  5.3s
+2026-04-20 01:41:06,722 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[423/494] 3ba21379 type=knowledge-update   verdict=CORRECT   dt=  3.8s
+2026-04-20 01:41:10,544 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[424/494] 9bbe84a2 type=knowledge-update   verdict=CORRECT   dt=  4.8s
+[425/494] 10e09553 type=knowledge-update   verdict=CORRECT   dt=  5.4s
+[426/494] dad224aa type=knowledge-update   verdict=CORRECT   dt=  4.7s
+2026-04-20 01:41:16,132 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[427/494] ba61f0b9 type=knowledge-update   verdict=CORRECT   dt=  3.4s
+2026-04-20 01:41:19,489 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[428/494] 42ec0761 type=knowledge-update   verdict=CORRECT   dt=  5.6s
+[429/494] 26bdc477 type=knowledge-update   verdict=CORRECT   dt=  2.7s
+2026-04-20 01:41:24,058 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[430/494] 5c40ec5b type=knowledge-update   verdict=CORRECT   dt=  5.5s
+[431/494] 0977f2af type=knowledge-update   verdict=CORRECT   dt=  3.3s
+2026-04-20 01:41:28,069 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[432/494] c6853660 type=knowledge-update   verdict=CORRECT   dt=  4.5s
+[433/494] 6aeb4375_abs type=knowledge-update   verdict=CORRECT   dt=  5.4s
+[434/494] 031748ae_abs type=knowledge-update   verdict=CORRECT   dt=  5.1s
+2026-04-20 01:41:33,524 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[435/494] 2698e78f_abs type=knowledge-update   verdict=CORRECT   dt=  4.3s
+[436/494] 0ddfec37_abs type=knowledge-update   verdict=CORRECT   dt=  4.4s
+2026-04-20 01:41:37,825 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[437/494] f685340e_abs type=knowledge-update   verdict=CORRECT   dt=  4.9s
+[438/494] 2133c1b5_abs type=knowledge-update   verdict=CORRECT   dt=  5.4s
+2026-04-20 01:41:42,981 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[439/494] 07741c45 type=knowledge-update   verdict=CORRECT   dt=  3.0s
+2026-04-20 01:41:46,237 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[440/494] 89941a94 type=knowledge-update   verdict=CORRECT   dt=  4.9s
+[441/494] 7161e7e2 type=single-session-ass verdict=CORRECT   dt=  3.2s
+[442/494] 89527b6b type=single-session-ass verdict=CORRECT   dt=  5.1s
+2026-04-20 01:41:51,151 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[443/494] e9327a54 type=single-session-ass verdict=CORRECT   dt=  4.4s
+2026-04-20 01:41:55,773 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[444/494] c4f10528 type=single-session-ass verdict=CORRECT   dt=  5.7s
+[445/494] 6ae235be type=single-session-ass verdict=CORRECT   dt=  2.9s
+2026-04-20 01:41:59,744 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[446/494] 4c36ccef type=single-session-ass verdict=CORRECT   dt=  5.6s
+[447/494] 1903aded type=single-session-ass verdict=CORRECT   dt=  4.6s
+2026-04-20 01:42:04,338 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[448/494] 7e00a6cb type=single-session-ass verdict=CORRECT   dt=  4.0s
+[449/494] 0e5e2d1a type=single-session-ass verdict=CORRECT   dt=  3.2s
+2026-04-20 01:42:08,544 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[450/494] ceb54acb type=single-session-ass verdict=CORRECT   dt=  5.4s
+[451/494] f523d9fe type=single-session-ass verdict=CORRECT   dt=  3.1s
+[452/494] fea54f57 type=single-session-ass verdict=CORRECT   dt=  4.4s
+2026-04-20 01:42:13,043 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[453/494] 18dcd5a5 type=single-session-ass verdict=CORRECT   dt=  3.2s
+2026-04-20 01:42:16,167 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[454/494] dc439ea3 type=single-session-ass verdict=CORRECT   dt=  4.3s
+[455/494] 488d3006 type=single-session-ass verdict=CORRECT   dt=  3.5s
+[456/494] cc539528 type=single-session-ass verdict=CORRECT   dt=  4.7s
+2026-04-20 01:42:20,577 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[457/494] 8464fc84 type=single-session-ass verdict=CORRECT   dt=  3.3s
+2026-04-20 01:42:24,142 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[458/494] 58470ed2 type=single-session-ass verdict=CORRECT   dt=  5.1s
+[459/494] 8aef76bc type=single-session-ass verdict=CORRECT   dt=  4.0s
+2026-04-20 01:42:29,652 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[460/494] 8cf51dda type=single-session-ass verdict=CORRECT   dt=  6.3s
+[461/494] 70b3e69b type=single-session-ass verdict=CORRECT   dt=  3.1s
+[462/494] 71a3fd6b type=single-session-ass verdict=CORRECT   dt=  4.3s
+2026-04-20 01:42:33,579 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[463/494] 3249768e type=single-session-ass verdict=CORRECT   dt=  2.7s
+2026-04-20 01:42:36,688 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[464/494] 2bf43736 type=single-session-ass verdict=CORRECT   dt=  4.9s
+[465/494] 8752c811 type=single-session-ass verdict=CORRECT   dt=  4.6s
+[466/494] 6222b6eb type=single-session-ass verdict=CORRECT   dt=  3.1s
+2026-04-20 01:42:41,382 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[467/494] e8a79c70 type=single-session-ass verdict=CORRECT   dt=  3.0s
+2026-04-20 01:42:44,504 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[468/494] d596882b type=single-session-ass verdict=CORRECT   dt=  4.3s
+[469/494] 51b23612 type=single-session-ass verdict=CORRECT   dt=  3.2s
+[470/494] 3e321797 type=single-session-ass verdict=CORRECT   dt=  4.7s
+2026-04-20 01:42:48,856 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[471/494] fca762bc type=single-session-ass verdict=CORRECT   dt=  2.8s
+2026-04-20 01:42:51,968 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[472/494] e982271f type=single-session-ass verdict=CORRECT   dt=  4.0s
+[473/494] 352ab8bd type=single-session-ass verdict=CORRECT   dt=  4.6s
+[474/494] 7a8d0b71 type=single-session-ass verdict=CORRECT   dt=  3.9s
+2026-04-20 01:42:56,600 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[475/494] 8b9d4367 type=single-session-ass verdict=CORRECT   dt=  3.2s
+2026-04-20 01:42:59,998 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[476/494] 1b9b7252 type=single-session-ass verdict=CORRECT   dt=  5.5s
+[477/494] a40e080f type=single-session-ass verdict=CORRECT   dt=  4.6s
+2026-04-20 01:43:04,593 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[478/494] 4388e9dd type=single-session-ass verdict=CORRECT   dt=  3.6s
+[479/494] e3fc4d6e type=single-session-ass verdict=CORRECT   dt=  3.0s
+2026-04-20 01:43:08,671 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[480/494] 41275add type=single-session-ass verdict=CORRECT   dt=  5.5s
+2026-04-20 01:43:10,170 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+2026-04-20 01:43:11,557 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=1 retrying in 2.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[481/494] 4baee567 type=single-session-ass verdict=CORRECT   dt=  4.4s
+[482/494] b759caee type=single-session-ass verdict=CORRECT   dt=  3.5s
+[483/494] 561fabcd type=single-session-ass verdict=CORRECT   dt=  6.6s
+2026-04-20 01:43:16,700 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[484/494] 5809eb10 type=single-session-ass verdict=CORRECT   dt=  3.2s
+2026-04-20 01:43:19,828 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[485/494] 28bcfaac type=single-session-ass verdict=CORRECT   dt=  4.1s
+[486/494] c8f1aeed type=single-session-ass verdict=CORRECT   dt=  3.6s
+[487/494] ac031881 type=single-session-ass verdict=CORRECT   dt=  4.7s
+2026-04-20 01:43:24,372 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[488/494] c7cf7dfd type=single-session-ass verdict=CORRECT   dt=  2.7s
+2026-04-20 01:43:27,161 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[489/494] 16c90bf4 type=single-session-ass verdict=CORRECT   dt=  4.2s
+2026-04-20 01:43:28,653 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=1 retrying in 2.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+2026-04-20 01:43:31,035 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=2 retrying in 4.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[490/494] e48988bc type=single-session-ass verdict=CORRECT   dt=  3.2s
+[491/494] 1de5cff2 type=single-session-ass verdict=CORRECT   dt=  3.1s
+2026-04-20 01:43:34,794 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+2026-04-20 01:43:35,415 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=3 retrying in 8.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+[492/494] 65240037 type=single-session-ass verdict=CORRECT   dt=  5.2s
+2026-04-20 01:43:40,027 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=0 retrying in 1.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+2026-04-20 01:43:41,404 WARNING eval.longmemeval.gemini gemini gemini-3.1-pro-preview attempt=1 retrying in 2.0s: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on
+2026-04-20 01:43:43,915 ERROR rejudge rejudge failed for eaca4986
+Traceback (most recent call last):
+  File "E:\Parallax\eval\longmemeval\rejudge.py", line 83, in _rejudge_one
+    jr: GeminiResult = call(
+                       ~~~~^
+        model=judge_model,
+        ^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        max_output_tokens=256,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "E:\Parallax\eval\longmemeval\gemini.py", line 98, in call
+    resp = client.models.generate_content(
+        model=model, contents=user, config=config
+    )
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\models.py", line 6276, in generate_content
+    response = self._generate_content(
+        model=model, contents=contents, config=parsed_config
+    )
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\models.py", line 4730, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\_api_client.py", line 1537, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\_api_client.py", line 1332, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\miniconda3\Lib\site-packages\tenacity\__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "C:\Users\user\miniconda3\Lib\site-packages\tenacity\__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "C:\Users\user\miniconda3\Lib\site-packages\tenacity\__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\user\miniconda3\Lib\site-packages\tenacity\__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\user\miniconda3\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\user\miniconda3\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\user\miniconda3\Lib\site-packages\tenacity\__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\_api_client.py", line 1309, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\miniconda3\Lib\site-packages\google\genai\errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_requests_per_model_per_day, limit: 250, model: gemini-3.1-pro\nPlease retry in 6h16m15.878063378s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_requests_per_model_per_day', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel', 'quotaDimensions': {'model': 'gemini-3.1-pro', 'location': 'global'}, 'quotaValue': '250'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '22575s'}]}}
+[493/494] eaca4986 type=single-session-ass verdict=ERROR     dt= 17.2s
+[494/494] 778164c6 type=single-session-ass verdict=CORRECT   dt=  8.1s
+[rejudge] done in 1114.6s -> eval\results\s_baseline_projudge.jsonl
