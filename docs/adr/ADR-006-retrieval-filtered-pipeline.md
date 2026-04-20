@@ -319,17 +319,44 @@ to Day-5 when sunk cost is maximal.
    tie-break stability, not score.
 
 **Day-2 — Hard decision branch (the C-pivot gate)**
-Read Day-1 `fallback_e2e` and pick exactly one of:
-- **≤ 87.5% → pivot to Route C**: abandon per-intent retrievers,
-  invest Day-3~5 fully in `fallback` + evidence-prompt tuning, pin
-  Target = 88%.
-- **87.5%–89.5% → B-lite**: ship only 2 high-ROI buckets (`temporal`
-  + `multi_session`); every other intent stays on `fallback`.
-- **≥ 89.5% → full B**: ship 3–4 per-intent retrievers, pursue
-  Stretch = 91%.
+The pivot uses **two numbers**, not one. Aggregate `fallback_e2e`
+alone mis-fires when `preference` (~30% of LongMemEval traffic per the
+label-distribution assumption) drags the mean down while `temporal`
+and `multi_session` — the buckets this ADR was actually built to fix —
+still have oracle-bounded headroom. Pivoting to C on a low aggregate
+would sunk-cost the wrong thing: abandon the per-intent retrievers
+right when the `temporal` / `multi_session` slice shows they are
+working.
+
+Compute both numbers on Day-1's ablation output:
+
+1. `fallback_e2e` — aggregate accuracy on questions routed to
+   `fallback`.
+2. `bucket_headroom[b]` for `b ∈ {temporal, multi_session}` — gap
+   between the **oracle-routed** specialised retriever's
+   `e2e_on_route` and `fallback_on_same_bucket` on the same bucket.
+   A bucket is **"live"** if `bucket_headroom[b] ≥ +2pp` and the same
+   sign holds across Day-1's two ablation seeds (per gate #6).
+
+Pick exactly one branch:
+- **`fallback_e2e` ≤ 87.5% AND no live bucket → pivot to Route C**:
+  abandon per-intent retrievers, invest Day-3~5 fully in `fallback` +
+  evidence-prompt tuning, pin Target = 88%.
+- **`fallback_e2e` ≤ 87.5% BUT ≥ 1 live bucket → B-lite (narrow)**:
+  ship only the live bucket(s). Aggregate is low but the buckets
+  this ADR targets still have headroom — do not pivot C just because
+  `preference` drags the mean.
+- **87.5% < `fallback_e2e` < 89.5% → B-lite (standard)**: ship only
+  the 2 high-ROI buckets (`temporal` + `multi_session`); every other
+  intent stays on `fallback`.
+- **`fallback_e2e` ≥ 89.5% → full B**: ship 3–4 per-intent
+  retrievers, pursue Stretch = 91%.
 
 Day-2 EOD freezes: best `fallback` params, router threshold candidate
-set, `INTENT_PRIORITY` permutation.
+set, `INTENT_PRIORITY` permutation, and the **live-bucket list** —
+the set of per-intent retrievers authorised to proceed to Day-3. A
+bucket not on the live list routes to `fallback` regardless of
+implementer preference.
 
 **Day-3 — Per-intent retrievers, verified one at a time**
 - Implement one retriever, immediately run bucket-level A/B:
@@ -376,7 +403,15 @@ is high-score but high-variance, fall back to `selected per-intent`.
 
 ### Transition criteria (Proposed → Accepted)
 
-All four must hold:
+All eight must hold. The four **artifact gates** confirm deliverables
+landed; the four **risk gates** confirm the result is trustworthy
+rather than a lucky single-run draw. The artifact-only view that
+shipped in the previous revision could mark the ADR Accepted on a
+noisy baseline, an unstable per-intent win, or an abstain signal that
+cannot distinguish router failure from retriever failure — the risk
+gates close those holes.
+
+**Artifact gates** (deliverables land):
 1. `parallax/retrieval/classify.py` and `parallax/retrieval/routes.py`
    have landed with the frozen six-intent set and the frozen thresholds
    (or their 200Q-sweep replacement).
@@ -387,6 +422,40 @@ All four must hold:
 4. `INTENT_PRIORITY` permutation is locked from the ≥20-question
    fixture; the `0.80 / 0.70` thresholds are re-stated (kept or
    replaced by the 200Q-sweep winner, which satisfies §3).
+
+**Risk gates** (the number is real, not a lucky run):
+5. **Baseline reproducibility** — re-running the Run A full-context
+   `_s` eval on the same 500Q set twice (different seed / scheduler
+   order) produces scores whose **max − min ≤ ±1pp** around 86.0%.
+   If variance exceeds ±1%, the 81.7% floor itself is noisy and gate
+   #3 is not meaningful; halt and stabilise the eval harness
+   (temperature pinning, judge determinism, tie-break seeding) before
+   Accepted. Without this gate, #3 could pass on a favourable draw
+   and fail on a second run.
+6. **Per-intent gain stability** — every per-intent retriever that
+   ships must show `route_gain > 0` on its bucket across **two
+   independent A/B runs** (different seed / question order), and at
+   least one of `temporal` or `multi_session` must clear this bar
+   before any per-intent retriever is Accepted. A retriever that
+   wins once and loses once does not count as proven — it ships on
+   `fallback` until stabilised. This converts §6 per-intent numbers
+   from point estimates into load-bearing ship decisions.
+7. **Cache hit rate** — on the second A/B run of an unchanged config
+   the classifier cache reports hit rate ≥ 90% and the answerer cache
+   ≥ 50%. Lower rates indicate cache-key instability (question
+   normalisation drift, evidence-hash churn) which makes subsequent
+   tuning cost-unbounded and invalidates the §Consequences "cache
+   is mandatory" claim. A cached A/B that is not actually cached
+   silently triples the eval budget for every later iteration.
+8. **Abstain source distinguishable** — `abstain_rate` is reported
+   split into at minimum `abstain_on_confident_route` vs
+   `abstain_on_fallback`, and per-intent for the confident-route
+   slice. A single aggregate `abstain_rate` does not satisfy this
+   gate. Without the split, rising abstains cannot be attributed to
+   router (wrong intent, retriever finds nothing) vs retriever
+   (right intent, narrow miss) vs answerer (right slice, refuses to
+   answer), defeating §5's design purpose and the §6 attribution
+   guarantee.
 
 ## Alternatives considered
 
@@ -438,6 +507,53 @@ All four must hold:
    within the right intent) into one scoring bucket, defeating the
    A/B decomposition. The abstain bucket is what makes `abstain_rate`
    by intent a first-class signal in §6.
+
+## Evidence provenance — [M] / [E] / [A] classification
+
+Every number in this ADR falls into exactly one of three provenance
+classes. The class determines what action a reviewer should take when
+the number looks wrong: `[M]` numbers are challenged by re-running the
+eval; `[E]` numbers are challenged by a small calibration run; `[A]`
+numbers are challenged by reading the code path they describe.
+
+- **[M] Measured** — produced by a specific, reproducible eval run
+  (commit SHA + config + seed). Replacement requires a new run, not
+  an argument.
+- **[E] Estimated** — author intuition or proxy calculation, not
+  directly measured. Safe to adjust if a calibration run disagrees;
+  not safe to cite as evidence.
+- **[A] Assumed** — structural assumption about future state,
+  distribution, or environment. May be wrong; first A/B run should
+  flag any that fail to hold.
+
+| Value in ADR                                 | Class | Source / basis                                                                                      |
+| -------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `_s` full-context 86.0%                      | [M]   | Run A, 2026-04-20, Pro-judge, 500Q                                                                  |
+| `oracle_full` 87.2%                          | [M]   | Run A, same run                                                                                     |
+| single-session-user 95.5%                    | [M]   | Run A per-type decomposition                                                                        |
+| ~1592-memory corpus                          | [M]   | E:\\Parallax DB row count at ADR draft time                                                          |
+| ~20k input tokens / answer call              | [M]   | Observed token counter on Run A answerer calls                                                      |
+| Floor = 0.95 × 86.0% = 81.7%                 | [M]   | Arithmetic on a [M] number                                                                          |
+| ~160Q multi-session, ~105Q temporal          | [E]   | Approximate bucket counts from Run A per-type table; exact counts re-read before Day-1               |
+| Rule threshold 0.80 / Flash threshold 0.70   | [E]   | Author intuition matched to 60/30/10 target split; replaced by 200Q sweep winner before Accepted     |
+| K_MAX = 32, K_MIN = 3                        | [E]   | Author default; Day-1 ablation sweeps K and may replace                                               |
+| Day-2 pivot thresholds 87.5% / 89.5%         | [E]   | Author intuition from the 86.0% floor and the 91% stretch; not derived from a calibration run        |
+| Live-bucket threshold `≥ +2pp` headroom      | [E]   | Chosen to exceed plausible single-run noise at 500Q; confirmed if gate #5 (±1% reproducibility) holds |
+| Baseline reproducibility tolerance ±1pp      | [E]   | Author estimate of acceptable judge/scheduler variance; tightens if first reproduce run is ≤0.5pp    |
+| Cache hit rate targets 90% / 50%             | [E]   | Derived from expected question / evidence stability across an unchanged-config A/B pair              |
+| `MAX_EVIDENCE_TOKENS = 6000`                 | [E]   | Context-budget headroom under Pro-grade answerer limits; not load-tested on largest corpora           |
+| Intent split target 60/30/10                 | [A]   | Assumed LongMemEval rule-gate distribution; first A/B run MUST report observed split and flag >20% drift |
+| 200Q labeled ≈ 500Q distribution             | [A]   | Assumed representative sampling; quantified by reporting `classify()`'s 500Q distribution vs label set   |
+| Router returns one intent per question       | [A]   | Single-intent model; multi-intent cases fall through §1 tie-break                                      |
+| Events inherit user_id scope from claims     | [A]   | Extending ADR-005 scope; validated by grep audit of every retriever in §4                              |
+| LongMemEval is English-only (zh rules inert) | [A]   | Corpus property at the benchmark version used; re-check if LongMemEval updates                          |
+
+**Convention going forward.** Any new numeric claim added to this ADR
+(or to downstream ADRs that cite it) carries one of `[M]` / `[E]` /
+`[A]` when first introduced. CI or review catches un-tagged numbers at
+PR time; the cost of the tag is one character of metadata, the benefit
+is that reviewers stop mistaking `[E]` / `[A]` values for `[M]` ground
+truth.
 
 ## References
 
