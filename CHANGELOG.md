@@ -3,6 +3,69 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-04-20
+
+### Added
+- **LongMemEval benchmark harness** (`eval/longmemeval/`). Parallax's
+  retrieval pipeline evaluated against the 500-question standardized
+  benchmark. Shipped results: `s_baseline` 88.92% (297/334 CORRECT with
+  Gemini-2.5-pro judge), `oracle_full` 86.96% (retrieval-free ceiling),
+  `_s` split 86.0% on the 500Q cut. Harness includes pipeline runner,
+  per-type breakdown, Pro-judge + flash-judge paths, rejudge tool, and
+  `--explain` retrieval trace view for debugging.
+- **ADR-006 Day-0 scaffolding — retrieval-filtered answerer pipeline.**
+  `parallax.llm.call` with tenacity-backed retry + SQLite WAL cache
+  (`busy_timeout=5000`, fallback-isolated hash); `parallax.retrieval`
+  INTENT_PRIORITY contracts + MMR + embedding cache keyed on
+  `(user_id, max_created_at)`; `parallax.answer.evidence` with sha256
+  content-addressed cache keys; eval shims `gemini`, `ablate_fallback`,
+  `sweep_thresholds`, and `schema_v2` (Pydantic v2 gate). 459 tests
+  green (455 non-smoke + 4 smoke). critic(opus) APPROVED.
+- **Migration m0008 — canonical timestamp normalization.** Normalizes
+  all `TIMESTAMP` columns across the corpus to the 32-char canonical
+  ISO-8601 form (`YYYY-MM-DDTHH:MM:SS.ffffff+00:00`). Permanently
+  closes the naive-ts same-second lexical-compare hole that caused
+  by_timeline boundary bugs.
+- **Migration m0007 — claim `content_hash` scoped to `user_id`.**
+  Backfills all rows to the new hash; enforces ADR-005's requirement
+  that dedup is per-user. Two users asserting the same triple now
+  get two rows by design.
+- `parallax.retrieval --explain` — retrieval trace view for LongMemEval
+  debugging (surfaces intent classification, per-retriever hits,
+  MMR selection, final evidence set).
+- `scripts/bootstrap_linux.sh` — idempotent one-shot Linux installer
+  (clone → venv → `pip install -e .[dev]` → `bootstrap.py` →
+  `.env` template). Each machine gets its own independent brain until
+  v0.6 HTTP server ships.
+
+### Fixed
+- **BUG 1+4 — `by_timeline` microsecond boundary & naive-ts lex compare.**
+  `by_timeline` dropped rows whose `created_at` equaled the end bound
+  when microsecond precision differed. Naive timestamps lexically
+  compared against timezone-aware strings caused ordering inversions.
+- **BUG 2 — `by_entity` / `by_bug_fix` missing `ORDER BY` on claim SELECT.**
+  Retrieval order was driven by SQLite rowid, producing non-deterministic
+  output across inserts. Added explicit `ORDER BY created_at DESC, id DESC`.
+- **BUG 3 — `content_hash` missing `user_id` scope (ADR-005).**
+  Claims from different users collapsed into one row when triples
+  matched. Fixed via m0007 backfill; `parallax.ingest.ingest_claim`
+  now hashes `(subject, predicate, object, source_id, user_id)`.
+- **CLI P0 stability.** cp950-safe stdout/stderr on Windows;
+  outer-guard wraps pipe close / SIGINT / unexpected exception paths
+  so `parallax inspect | head` no longer produces BrokenPipe tracebacks.
+- **`pydantic>=2` + `tenacity>=8` added to runtime dependencies.**
+  ADR-006 Day-0 scaffold imports both, but `[project.dependencies]`
+  only listed `python-ulid`, `python-dotenv`, `typing-extensions`.
+  Clean-clone bootstrap + pytest collection failed without them.
+- **LongMemEval `parse_verdict` silent-fail.** Pro-judge runs with
+  thinking-token budget exhaustion returned empty text, which the old
+  parser defaulted to INCORRECT. Now raises `ValueError`; `run_one`
+  catches and emits `verdict=ERROR` so rejudge is possible post-hoc.
+
+### Coverage
+- 421 tests / 89.37% (v0.5.0 GA); 459 tests / comparable coverage after
+  ADR-006 Day-0 merge.
+
 ## [0.4.0] - 2026-04-19
 
 ### Added
