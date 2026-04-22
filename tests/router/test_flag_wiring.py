@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
-from parallax.router.config import MEMORY_ROUTER, is_router_enabled
+from parallax.router.config import is_router_enabled
 from parallax.router.mock_adapter import MockMemoryRouter
 
 
-def test_default_memory_router_false() -> None:
-    assert MEMORY_ROUTER is False
+def test_default_memory_router_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default MEMORY_ROUTER is False when env var is absent.
+
+    Isolates from ambient env (CI/shell may have MEMORY_ROUTER pre-set):
+    delenv + importlib.reload of the config module to force a fresh read.
+    Codex review P2 fix.
+    """
+    monkeypatch.delenv("MEMORY_ROUTER", raising=False)
+    import parallax.router.config as cfg
+
+    importlib.reload(cfg)
+    try:
+        assert cfg.MEMORY_ROUTER is False
+    finally:
+        # Restore module state for downstream tests regardless of ambient env.
+        importlib.reload(cfg)
 
 
-def test_is_router_enabled_default_false() -> None:
+def test_is_router_enabled_default_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """is_router_enabled() returns False when env var is absent."""
+    monkeypatch.delenv("MEMORY_ROUTER", raising=False)
     assert is_router_enabled() is False
 
 
