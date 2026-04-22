@@ -1,0 +1,41 @@
+site_name: Parallax
+site_url: https://github.com/parallax-kernel/parallax
+repo_url: https://github.com/parallax-kernel/parallax
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Architecture: architecture.md
+  - Deploy: deploy.md
+  - TLS: tls.md
+  - ADRs:
+    - Overview: adr/index.md
+    - ADR-001 Content-hash SSoT: adr/ADR-001-content-hash-ssot.md
+    - ADR-002 WAL page-1 corruption policy: adr/ADR-002-wal-page1-corruption-policy.md
+    - ADR-003 Target-kind split: adr/ADR-003-target-kind-split.md
+    - ADR-004 Claim dedup includes source_id: adr/ADR-004-claim-dedup-includes-source-id.md
+    - ADR-005 Claim content_hash user_id scope: adr/ADR-005-claim-content-hash-user-id-scope.md
+    - ADR-006 Retrieval-filtered pipeline: adr/ADR-006-retrieval-filtered-pipeline.md
+
+exclude_docs: |
+  adr/README.md
+
+not_in_nav: |
+  cloud.md
+  phase4-dual-memory-prd.md
+  shadow-write.md
+  state-transitions.md
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences

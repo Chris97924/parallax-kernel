@@ -1,0 +1,21 @@
+# cloudflared.yml — Cloudflare Tunnel config for Parallax
+#
+# Substitution placeholders:
+#   <TUNNEL-UUID>      — replace with the UUID returned by:
+#                        cloudflared tunnel create parallax
+#   parallax.example.com — replace with your actual public hostname
+#                        (appears under ``ingress:`` below).
+#
+# Usage:
+#   1. cloudflared tunnel create parallax        # creates tunnel, prints UUID
+#   2. Fill in <TUNNEL-UUID> below (two places).
+#   3. cloudflared tunnel route dns parallax parallax.example.com
+#   4. cloudflared tunnel run parallax
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /etc/cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: parallax.example.com
+    service: http://localhost:8080
+  - service: http_status:404

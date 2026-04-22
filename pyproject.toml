@@ -29,9 +29,14 @@ dev = [
     "black>=24",
     "isort>=5",
     "ruff>=0.5",
+    "moto[s3]>=5",
+    "boto3>=1.34",
 ]
 extract = [
     "httpx>=0.27",
+]
+cloud = [
+    "boto3>=1.34",
 ]
 
 [tool.setuptools.packages.find]

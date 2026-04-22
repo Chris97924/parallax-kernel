@@ -11,9 +11,14 @@ import importlib
 
 class TestPublicAPI:
     def test_version_matches_pyproject(self) -> None:
+        import pathlib
+        import tomllib
+
         import parallax
 
-        assert parallax.__version__ == "0.4.0"
+        pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+        declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+        assert parallax.__version__ == declared
 
     def test_every_all_name_importable_and_not_none(self) -> None:
         mod = importlib.import_module("parallax")

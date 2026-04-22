@@ -31,7 +31,7 @@ import pathlib
 import sys
 from collections.abc import Sequence
 
-from parallax.backup import create_backup
+from parallax.backup import create_backup, download_from, upload_to
 from parallax.config import load_config
 from parallax.restore import RestoreVerificationError, restore_backup
 
@@ -101,10 +101,20 @@ def build_parser() -> argparse.ArgumentParser:
         prog="parallax",
         description="Parallax Kernel CLI — backup / restore / inspect the canonical store.",
     )
-    sub = parser.add_subparsers(dest="command", metavar="{backup,restore,inspect}")
+    sub = parser.add_subparsers(
+        dest="command", metavar="{backup,restore,inspect,token}"
+    )
 
     p_backup = sub.add_parser("backup", help="Write a tar.gz backup archive.")
     p_backup.add_argument("archive", type=pathlib.Path, help="destination .tar.gz path")
+    p_backup.add_argument(
+        "--to",
+        dest="upload_to",
+        default=None,
+        metavar="URI",
+        help="upload archive to this URI after creation (e.g. s3://bucket/key or local path); "
+             "the local tmp archive is removed after upload",
+    )
 
     p_restore = sub.add_parser("restore", help="Restore from a tar.gz backup archive.")
     p_restore.add_argument("archive", type=pathlib.Path, help="source .tar.gz path")
@@ -112,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-verify",
         action="store_true",
         help="skip manifest verification after restore (default: verify)",
+    )
+    p_restore.add_argument(
+        "--from",
+        dest="download_from",
+        default=None,
+        metavar="URI",
+        help="download archive from this URI before restoring (e.g. s3://bucket/key)",
     )
 
     p_inspect = sub.add_parser(
@@ -163,13 +180,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="emit the migration plan as JSON for machine consumption",
     )
 
+    p_token = sub.add_parser(
+        "token",
+        help="Manage per-user API tokens (multi-user mode).",
+    )
+    tsub = p_token.add_subparsers(dest="token_cmd", metavar="{create,list,revoke}")
+
+    p_tc = tsub.add_parser("create", help="Mint a new API token for a user.")
+    p_tc.add_argument("--user-id", required=True, help="user_id to bind the token to")
+    p_tc.add_argument("--label", default=None, help="optional operator-visible label")
+
+    tsub.add_parser("list", help="List known tokens (hashes only — plaintext is never stored).")
+
+    p_tr = tsub.add_parser("revoke", help="Revoke tokens matching a hash prefix.")
+    p_tr.add_argument(
+        "prefix",
+        help="token_hash prefix (>= 6 hex chars); ambiguous matches abort",
+    )
+
     return parser
 
 
 # ----- backup / restore -----------------------------------------------------
 
 
-def _cmd_backup(archive: pathlib.Path) -> int:
+def _cmd_backup(archive: pathlib.Path, *, upload_uri: str | None = None) -> int:
     cfg = load_config()
     try:
         manifest = create_backup(cfg, archive)
@@ -181,11 +216,34 @@ def _cmd_backup(archive: pathlib.Path) -> int:
         f"  db_sha256: {manifest.db_sha256}\n"
         f"  row_counts: {manifest.row_counts}"
     )
+    if upload_uri is not None:
+        try:
+            upload_to(archive, upload_uri)
+        except (ImportError, ValueError, OSError) as exc:
+            print(f"upload failed: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+        print(f"  uploaded to: {upload_uri}")
+        try:
+            archive.unlink()
+        except OSError:
+            pass
     return _EXIT_OK
 
 
-def _cmd_restore(archive: pathlib.Path, *, verify: bool) -> int:
+def _cmd_restore(
+    archive: pathlib.Path,
+    *,
+    verify: bool,
+    download_uri: str | None = None,
+) -> int:
     cfg = load_config()
+    if download_uri is not None:
+        try:
+            download_from(download_uri, archive)
+        except (ImportError, ValueError, OSError) as exc:
+            print(f"download failed: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+        print(f"  downloaded from: {download_uri}")
     try:
         manifest = restore_backup(cfg, archive, verify=verify)
     except FileNotFoundError as exc:
@@ -439,6 +497,142 @@ def _cmd_inspect_inject(*, user_id: str, session_id: str | None, max_hits: int) 
         conn.close()
 
 
+# ----- token management -----------------------------------------------------
+
+
+_TOKEN_MIN_PREFIX = 6
+
+
+def _cmd_token_create(*, user_id: str, label: str | None) -> int:
+    """Mint a fresh token, hash+store it, and print the plaintext ONCE.
+
+    Uses :func:`secrets.token_urlsafe` for the plaintext (32 random bytes
+    → ~43 URL-safe chars) and ``sha256`` for the stored digest. The
+    plaintext is discarded after printing — a lost token must be revoked
+    and re-issued, matching GitHub / PyPI token semantics.
+    """
+    import secrets as _secrets
+
+    from parallax.server.auth import hash_token
+    from parallax.sqlite_store import now_iso
+
+    plaintext = _secrets.token_urlsafe(32)
+    token_hash = hash_token(plaintext)
+    conn = _open_conn()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO api_tokens(token_hash, user_id, created_at, "
+                "revoked_at, label) VALUES (?, ?, ?, NULL, ?)",
+                (token_hash, user_id, now_iso(), label),
+            )
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 — surface as user error
+            print(f"token create failed: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+    finally:
+        conn.close()
+    print(plaintext)
+    print("  token_hash_prefix: " + token_hash[:12], file=sys.stderr)
+    print(
+        "  WARNING: copy the token above now — it is not shown again.",
+        file=sys.stderr,
+    )
+    return _EXIT_OK
+
+
+def _cmd_token_list() -> int:
+    conn = _open_conn()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT token_hash, user_id, created_at, revoked_at, label "
+                "FROM api_tokens ORDER BY created_at ASC"
+            ).fetchall()
+        except Exception as exc:  # noqa: BLE001
+            print(f"token list failed: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+    finally:
+        conn.close()
+    if not rows:
+        print("(no tokens)")
+        return _EXIT_OK
+    print(
+        f"{'prefix':<12}  {'user_id':<24}  {'created_at':<32}  "
+        f"{'revoked_at':<32}  label"
+    )
+    for r in rows:
+        prefix = str(r["token_hash"])[:12]
+        revoked = r["revoked_at"] or "-"
+        label = r["label"] or ""
+        print(
+            f"{prefix:<12}  {r['user_id']:<24}  {r['created_at']:<32}  "
+            f"{revoked:<32}  {label}"
+        )
+    return _EXIT_OK
+
+
+def _cmd_token_revoke(prefix: str) -> int:
+    from parallax.sqlite_store import now_iso
+
+    if len(prefix) < _TOKEN_MIN_PREFIX:
+        print(
+            f"refusing to revoke by prefix shorter than {_TOKEN_MIN_PREFIX} chars "
+            "— pass more of the token_hash",
+            file=sys.stderr,
+        )
+        return _EXIT_USER_ERROR
+    # token_hash is sha256 hex; reject non-hex prefixes to kill LIKE-injection
+    # via % / _ metacharacters.
+    if not all(c in "0123456789abcdef" for c in prefix.lower()):
+        print(
+            f"invalid prefix {prefix!r}: token hashes are hex [0-9a-f]",
+            file=sys.stderr,
+        )
+        return _EXIT_USER_ERROR
+    conn = _open_conn()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT token_hash, user_id, revoked_at FROM api_tokens "
+                "WHERE token_hash LIKE ?",
+                (prefix + "%",),
+            ).fetchall()
+        except Exception as exc:  # noqa: BLE001
+            print(f"token revoke failed: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+        if not rows:
+            print(f"no tokens match prefix {prefix!r}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+        if len(rows) > 1:
+            print(
+                f"prefix {prefix!r} matches {len(rows)} tokens; refusing to revoke",
+                file=sys.stderr,
+            )
+            for r in rows:
+                print(
+                    f"  {str(r['token_hash'])[:12]}  {r['user_id']}",
+                    file=sys.stderr,
+                )
+            return _EXIT_USER_ERROR
+        (row,) = rows
+        if row["revoked_at"] is not None:
+            print(
+                f"token {str(row['token_hash'])[:12]} already revoked at "
+                f"{row['revoked_at']}"
+            )
+            return _EXIT_OK
+        conn.execute(
+            "UPDATE api_tokens SET revoked_at = ? WHERE token_hash = ?",
+            (now_iso(), row["token_hash"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"revoked {str(row['token_hash'])[:12]}  user_id={row['user_id']}")
+    return _EXIT_OK
+
+
 # ----- dispatcher -----------------------------------------------------------
 
 
@@ -446,9 +640,22 @@ def _dispatch(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.command == "backup":
-        return _cmd_backup(args.archive)
+        return _cmd_backup(args.archive, upload_uri=args.upload_to)
     if args.command == "restore":
-        return _cmd_restore(args.archive, verify=not args.no_verify)
+        return _cmd_restore(
+            args.archive,
+            verify=not args.no_verify,
+            download_uri=args.download_from,
+        )
+    if args.command == "token":
+        if args.token_cmd == "create":
+            return _cmd_token_create(user_id=args.user_id, label=args.label)
+        if args.token_cmd == "list":
+            return _cmd_token_list()
+        if args.token_cmd == "revoke":
+            return _cmd_token_revoke(args.prefix)
+        parser.parse_args(["token", "--help"])
+        return _EXIT_USAGE
     if args.command == "inspect":
         user_id = args.user_id if args.user_id is not None else _default_user()
         if args.inspect_cmd == "events":

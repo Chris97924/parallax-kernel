@@ -70,7 +70,7 @@ class TestMigrationPlanShape:
                 )
         plan = migration_plan(c)
         assert plan.applied == (1, 2, 3)
-        assert [s.version for s in plan.pending] == [4, 5, 6, 7, 8]
+        assert [s.version for s in plan.pending] == [4, 5, 6, 7, 8, 9, 10]
         assert plan.current_version == 3
         c.close()
 
@@ -91,12 +91,13 @@ class TestRowImpactEstimates:
         from parallax.migrations import migrate_down_to
         migrate_down_to(c, 7)
         plan = migration_plan(c)
-        assert len(plan.pending) == 1
-        step = plan.pending[0]
-        for table, count in step.row_impact_estimates.items():
-            assert isinstance(count, int)
-            assert count >= 0
-            assert isinstance(table, str) and table
+        # After rolling back to v7, migrations 8, 9, and 10 are all pending.
+        assert len(plan.pending) == 3
+        for step in plan.pending:
+            for table, count in step.row_impact_estimates.items():
+                assert isinstance(count, int)
+                assert count >= 0
+                assert isinstance(table, str) and table
         c.close()
 
 

@@ -32,7 +32,7 @@ import sqlite3
 import tarfile
 from typing import Any
 
-__all__ = ["BackupManifest", "MANIFEST_NAME", "create_backup"]
+__all__ = ["BackupManifest", "MANIFEST_NAME", "create_backup", "upload_to", "download_from"]
 
 MANIFEST_NAME = "manifest.json"
 _DB_ARCHIVE_PATH = "db/parallax.db"
@@ -201,3 +201,91 @@ def create_backup(cfg: Any, archive_path: pathlib.Path) -> BackupManifest:
         tar.addfile(info, io.BytesIO(manifest_bytes))
 
     return manifest
+
+
+# ---------------------------------------------------------------------------
+# Cloud upload / download helpers (optional boto3 dep)
+# ---------------------------------------------------------------------------
+
+def _parse_s3_uri(uri: str) -> tuple[str, str]:
+    """Parse ``s3://bucket/key`` → ``(bucket, key)``. Raises ValueError on bad input."""
+    if not uri.startswith("s3://"):
+        raise ValueError(f"not an s3:// URI: {uri!r}")
+    rest = uri[len("s3://"):]
+    if "/" not in rest:
+        raise ValueError(f"s3:// URI must have format s3://bucket/key, got {uri!r}")
+    bucket, key = rest.split("/", 1)
+    if not bucket or not key:
+        raise ValueError(f"s3:// URI must have non-empty bucket and key, got {uri!r}")
+    return bucket, key
+
+
+def _get_boto3_client():
+    """Return a boto3 S3 client, raising ImportError with a helpful message if boto3 is absent."""
+    try:
+        import boto3  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise ImportError(
+            "boto3 is required for s3:// destinations. "
+            "Install it with: pip install 'parallax-kernel[cloud]'"
+        ) from exc
+    import os
+    endpoint_url = os.environ.get("AWS_ENDPOINT_URL") or None
+    return boto3.client("s3", endpoint_url=endpoint_url)
+
+
+def upload_to(archive_path: pathlib.Path, destination_uri: str) -> None:
+    """Upload *archive_path* to *destination_uri*.
+
+    If *destination_uri* starts with ``s3://`` the archive is uploaded to S3
+    (or any S3-compatible service) using boto3. Otherwise the function copies
+    the archive to *destination_uri* treated as a local filesystem path.
+
+    Raises
+    ------
+    ImportError
+        boto3 not installed and an ``s3://`` destination was requested.
+    ValueError
+        Malformed ``s3://`` URI.
+    FileNotFoundError
+        *archive_path* does not exist.
+    """
+    archive_path = pathlib.Path(archive_path)
+    if not archive_path.is_file():
+        raise FileNotFoundError(f"archive not found: {archive_path}")
+
+    if destination_uri.startswith("s3://"):
+        bucket, key = _parse_s3_uri(destination_uri)
+        client = _get_boto3_client()
+        client.upload_file(str(archive_path), bucket, key)
+    else:
+        import shutil
+        dest = pathlib.Path(destination_uri)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(archive_path), str(dest))
+
+
+def download_from(source_uri: str, dest_path: pathlib.Path) -> None:
+    """Download an archive from *source_uri* to *dest_path*.
+
+    If *source_uri* starts with ``s3://`` the archive is downloaded from S3
+    (or any S3-compatible service) using boto3. Otherwise the file at
+    *source_uri* (local path) is copied to *dest_path*.
+
+    Raises
+    ------
+    ImportError
+        boto3 not installed and an ``s3://`` source was requested.
+    ValueError
+        Malformed ``s3://`` URI.
+    """
+    dest_path = pathlib.Path(dest_path)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if source_uri.startswith("s3://"):
+        bucket, key = _parse_s3_uri(source_uri)
+        client = _get_boto3_client()
+        client.download_file(bucket, key, str(dest_path))
+    else:
+        import shutil
+        shutil.copy2(source_uri, str(dest_path))

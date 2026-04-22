@@ -1,0 +1,19 @@
+{
+  "name": "parallax-session-hook",
+  "version": "0.1.0",
+  "description": "SessionStart hook: fetches a Parallax <system-reminder> over HTTP.",
+  "author": "Chris",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ${CLAUDE_PLUGIN_ROOT}/hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}

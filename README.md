@@ -51,7 +51,7 @@ Everything re-exported from the `parallax` package root:
 | `parallax_info` / `ParallaxInfo` | function / dataclass | Runtime introspection (version, modules, schema). |
 | `health` | function | Operational snapshot (db path, table counts, journal mode, last error). |
 | `Source` / `Memory` / `Claim` / `Event` | dataclass | Frozen record types used by the storage layer. |
-| `__version__` | str | Package version (currently `0.2.0`). |
+| `__version__` | str | Package version (currently `0.5.0`). |
 
 ## Modules
 

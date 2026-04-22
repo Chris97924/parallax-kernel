@@ -1,0 +1,26 @@
+app = "parallax"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    timeout = "5s"
+    method = "get"
+    path = "/healthz"
+
+[[mounts]]
+  source = "parallax_data"
+  destination = "/data"
+
+[env]
+  PARALLAX_DB_PATH = "/data/parallax.sqlite"
+  PARALLAX_VAULT_PATH = "/data/vault"

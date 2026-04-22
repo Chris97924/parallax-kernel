@@ -1,0 +1,24 @@
+# Caddyfile — Parallax reverse proxy template
+#
+# Substitution placeholders:
+#   {{PARALLAX_HOST}}  — your public domain, e.g. parallax.example.com
+#
+# Caddy will automatically obtain and renew a Let's Encrypt TLS certificate
+# for {{PARALLAX_HOST}} as long as ports 80 and 443 are reachable from the internet.
+#
+# Usage:
+#   1. Replace {{PARALLAX_HOST}} with your actual domain.
+#   2. Copy this file to /etc/caddy/Caddyfile (or pass via --config).
+#   3. sudo caddy run --config /etc/caddy/Caddyfile
+
+{{PARALLAX_HOST}} {
+    reverse_proxy 127.0.0.1:8080
+
+    header /healthz Cache-Control "no-store"
+
+    encode gzip
+
+    log {
+        output file /var/log/caddy/parallax.log
+    }
+}

@@ -41,6 +41,8 @@ from parallax.migrations import (
     m0006_events_session_id,
     m0007_claim_content_hash_user_id,
     m0008_normalize_naive_created_at,
+    m0009_api_tokens,
+    m0010_memory_cards,
 )
 from parallax.sqlite_store import now_iso
 
@@ -114,6 +116,18 @@ MIGRATIONS: list[Migration] = [
         name="normalize_naive_created_at",
         up=m0008_normalize_naive_created_at.up,
         down=m0008_normalize_naive_created_at.down,
+    ),
+    Migration(
+        version=9,
+        name="api_tokens",
+        up=m0009_api_tokens.up,
+        down=m0009_api_tokens.down,
+    ),
+    Migration(
+        version=10,
+        name="memory_cards",
+        up=m0010_memory_cards.up,
+        down=m0010_memory_cards.down,
     ),
 ]
 
@@ -218,6 +232,8 @@ _MIGRATION_MODULES: dict[int, object] = {
     6: m0006_events_session_id,
     7: m0007_claim_content_hash_user_id,
     8: m0008_normalize_naive_created_at,
+    9: m0009_api_tokens,
+    10: m0010_memory_cards,
 }
 
 # Matches table identifiers following the DDL/DML keywords we care about.
