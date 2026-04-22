@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
-import sys
 
 from parallax.router.contracts import BackfillReport, BackfillRequest
 from parallax.router.types import MappingState
@@ -24,12 +23,23 @@ __all__ = ["BackfillRunner"]
 # Precompiled regex for bug-fix predicate classification (case-insensitive).
 _BUG_RE = re.compile(r"^(fix|bug[_-]?fix|bugfix)(:|$)", re.IGNORECASE)
 
+# H-1 (Lane D-2 security review): hard cap on per-scope row count so scope='all'
+# cannot drag millions of rows into memory via an attacker-controlled request.
+_MAX_BACKFILL_ROWS = 10_000
+
 
 def _write_fingerprint(conn: sqlite3.Connection) -> str:
     """Return sha256 hex of pipe-joined COUNT(*) values across 4 core tables.
 
     Format: sha256('{events_count}|{claims_count}|{memories_count}|{decisions_count}')
     Returns a 64-character hex string.
+
+    LIMITATION (M-1 from Lane D-2 security review): this fingerprint detects
+    INSERT and DELETE but NOT UPDATE — in-place edits that preserve row counts
+    are invisible to this check. A buggy Lane D-3 runner that issues UPDATE
+    instead of INSERT would pass zero-write verification silently. Lane D-3
+    must add a content-aware proof (e.g. per-table content-hash aggregate) if
+    UPDATE paths land.
     """
     events_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     claims_count = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
@@ -43,12 +53,15 @@ def _classify_claim_predicate(predicate: str) -> str:
     """Classify a claim predicate string into a RetrieveKind probe-key.
 
     Returns:
-        'RetrieveKind.decision' if predicate starts with 'decision:'
+        'RetrieveKind.decision' if predicate starts with 'decision:' (case-insensitive)
         'RetrieveKind.bug'      if predicate matches r'^(fix|bug[_-]?fix|bugfix)(:|$)'
                                 (case-insensitive)
         'RetrieveKind.entity'   otherwise
+
+    Both branches are case-insensitive to stay consistent with _BUG_RE
+    (SF4 from Lane D-2 python review).
     """
-    if predicate.startswith("decision:"):
+    if predicate.lower().startswith("decision:"):
         return "RetrieveKind.decision"
     if _BUG_RE.match(predicate):
         return "RetrieveKind.bug"
@@ -88,7 +101,7 @@ class BackfillRunner:
         # side-effects from crosswalk_seed at module level.
         from parallax.router.crosswalk_seed import UnroutableQueryError, resolve
 
-        limit = 50 if request.scope == "sample" else sys.maxsize
+        limit = 50 if request.scope == "sample" else _MAX_BACKFILL_ROWS
 
         rows_mapped = 0
         rows_unmapped = 0

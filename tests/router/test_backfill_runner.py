@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import pathlib
 import sqlite3
 
 import pytest
 
 from parallax.ingest import ingest_claim, ingest_memory
-from parallax.migrations import migrate_to_latest
 
 # Intentional private import for unit coverage
 from parallax.router.backfill import (
@@ -16,19 +14,11 @@ from parallax.router.backfill import (
     _classify_claim_predicate,  # noqa: PLC2701
 )
 from parallax.router.contracts import BackfillReport, BackfillRequest
-from parallax.sqlite_store import connect
+
+# `conn` fixture is provided by tests/conftest.py with proper try/finally
+# teardown — do not redefine locally (SF1 fix from Lane D-2 python review).
 
 _USER = "test_user_002"
-
-
-@pytest.fixture()
-def conn(tmp_path: pathlib.Path) -> sqlite3.Connection:
-    """Fresh SQLite connection with all migrations applied."""
-    db = tmp_path / "test_backfill.db"
-    c = connect(db)
-    migrate_to_latest(c)
-    yield c
-    c.close()
 
 
 # ---------------------------------------------------------------------------

@@ -8,34 +8,25 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-import pathlib
 import sqlite3
 
 import pytest
 
 from parallax.ingest import ingest_claim, ingest_memory
-from parallax.migrations import migrate_to_latest
 from parallax.retrieval.contracts import RetrievalEvidence
 from parallax.router.contracts import BackfillRequest, IngestRequest, QueryRequest
 from parallax.router.ports import BackfillPort, IngestPort, InspectPort, QueryPort
 from parallax.router.real_adapter import QUERY_DISPATCH, RealMemoryRouter
 from parallax.router.types import QueryType
-from parallax.sqlite_store import connect, now_iso
+from parallax.sqlite_store import now_iso
+
+# `conn` fixture is provided by tests/conftest.py with proper try/finally
+# teardown — do not redefine locally (SF1 fix from Lane D-2 python review).
 
 _USER = "test_user_001"
 _FILE_PATH = "src/main.py"
 _SUBJECT = "python"
 _SESSION = "sess-001"
-
-
-@pytest.fixture()
-def conn(tmp_path: pathlib.Path) -> sqlite3.Connection:
-    """Fresh SQLite connection with all migrations applied."""
-    db = tmp_path / "test_real_adapter.db"
-    c = connect(db)
-    migrate_to_latest(c)
-    yield c
-    c.close()
 
 
 @pytest.fixture()

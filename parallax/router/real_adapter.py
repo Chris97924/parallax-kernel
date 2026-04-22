@@ -44,6 +44,10 @@ QUERY_DISPATCH: Mapping[QueryType, str] = types.MappingProxyType(_DISPATCH)
 # mutate _DISPATCH and sneak entries past the frozen MappingProxyType view.
 del _DISPATCH
 
+# H-1 (Lane D-2 security review): cap caller-supplied limit before forwarding
+# into the SQL LIMIT parameter. Prevents OOM/DoS via request.limit=sys.maxsize.
+_MAX_QUERY_LIMIT = 500
+
 _PORTS = ("QueryPort", "IngestPort", "InspectPort", "BackfillPort")
 _D2_FREEZE_MSG = (
     "Lane D-2 freeze: RealMemoryRouter.{method} is intentionally unimplemented;"
@@ -88,23 +92,24 @@ class RealMemoryRouter:
                 "TEMPORAL_CONTEXT requires since and until in QueryRequest"
             )
 
-        retriever_name = QUERY_DISPATCH[request.query_type]
+        # Clamp caller-supplied limit to _MAX_QUERY_LIMIT (H-1 hardening).
+        capped_limit = min(max(request.limit, 1), _MAX_QUERY_LIMIT)
 
         if request.query_type is QueryType.RECENT_CONTEXT:
             hits = _retrieve.recent_context(
-                self._conn, user_id=request.user_id, limit=request.limit
+                self._conn, user_id=request.user_id, limit=capped_limit
             )
         elif request.query_type is QueryType.ARTIFACT_CONTEXT:
             hits = _retrieve.by_file(
-                self._conn, user_id=request.user_id, path=request.q, limit=request.limit
+                self._conn, user_id=request.user_id, path=request.q, limit=capped_limit
             )
         elif request.query_type is QueryType.ENTITY_PROFILE:
             hits = _retrieve.by_entity(
-                self._conn, user_id=request.user_id, subject=request.q, limit=request.limit
+                self._conn, user_id=request.user_id, subject=request.q, limit=capped_limit
             )
         elif request.query_type is QueryType.CHANGE_TRACE:
             hits = _retrieve.by_decision(
-                self._conn, user_id=request.user_id, limit=request.limit
+                self._conn, user_id=request.user_id, limit=capped_limit
             )
         else:  # TEMPORAL_CONTEXT — since/until already validated above
             hits = _retrieve.by_timeline(
@@ -112,8 +117,10 @@ class RealMemoryRouter:
                 user_id=request.user_id,
                 since=request.since,  # type: ignore[arg-type]
                 until=request.until,  # type: ignore[arg-type]
-                limit=request.limit,
+                limit=capped_limit,
             )
+
+        retriever_name = QUERY_DISPATCH[request.query_type]
 
         hit_dicts = tuple(
             {
