@@ -3,6 +3,93 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-04-22
+
+Pre-release tag: `v0.6.0-pre1`. GA (`v0.6.0`) will land after a 7-day
+dry-run observation window for Lane C Phase 1.
+
+### Added
+- **v0.6 Phase A — FastAPI server (localhost MVP).** `parallax/server/`
+  exposes `/ingest`, `/query`, `/query/reminder`, `/inspect/health`,
+  `/inspect/info`, and an unauthenticated `/healthz`. Single-token
+  bearer auth via `PARALLAX_TOKEN`; opt-out warning when the env var
+  is unset (localhost dev only). `parallax serve` CLI subcommand.
+  `plugins/parallax-session-hook/` is a Claude Code SessionStart hook
+  that renders `/query/reminder` into an injected `<system-reminder>`.
+- **v0.6 Phase B — deploy + multi-user + viewer + cloud backup.**
+  `deploy/{fly.toml,railway.json,Caddyfile,cloudflared.yml}` templates;
+  `docs/{install,deploy,tls,architecture,adr/index}.md` + `mkdocs.yml`
+  material theme. Migration **m0009** adds `api_tokens` (sha256 hash
+  PK + user_id binding + revoked_at audit). `PARALLAX_MULTI_USER=1`
+  unlocks per-user bearer auth; `parallax token create/list/revoke`
+  CLI. `parallax/server/viewer.py` serves a 3-tab web UI behind
+  `PARALLAX_VIEWER_ENABLED`. `parallax backup --to s3://...` and
+  `restore --from s3://...` via `[cloud]` optional extra (boto3).
+  `[server]` extra pins fastapi + uvicorn. README + CONTRIBUTING +
+  ARCHITECTURE finalized; `mkdocs build --strict` green.
+- **Lane C Phase 1 — MEMORY.md interception via Parallax (dry-run).**
+  Migration **m0010** adds `memory_cards` with `UNIQUE(user_id, filename)`
+  and a `category` CHECK constraint. `parallax/memory_md.py` parses
+  Chris's 4-section `MEMORY.md` + YAML-frontmatter companions into
+  frozen dataclasses (`MemoryMdEntry`, `CompanionFile`, `IngestReport`)
+  and upserts through `_manual_tx` (single BEGIN IMMEDIATE / COMMIT /
+  ROLLBACK). `parallax/server/routes/export.py` exposes
+  `GET /export/memory_md` (auth-gated, deterministic section ordering,
+  body-only belt-and-braces privacy filter). `docs/lane-c-phase1.md`
+  is the operator guide with the Phase 2 switchover contract.
+
+### Changed
+- **Privacy filter now body-only + regex pattern.** The v0.5-era
+  substring-based `contains_secret` is preserved for back-compat, but
+  ingest + export paths now use `body_looks_like_secret`, a compiled
+  regex that requires a secret-keyword + separator + 8+ high-entropy
+  character value. Eliminates prior false positives against Chris's
+  own MEMORY.md (e.g. the literal text `token 月度 cap lesson` no
+  longer trips the filter). Names and descriptions are no longer
+  scanned — they cannot plausibly carry secrets.
+- **Ingest is now transactional end-to-end.** `ingest_memory_md` wraps
+  the entire entry loop in one manual transaction. The old per-row
+  `conn.commit()` is gone; a mid-loop exception rolls the whole batch
+  back and re-raises. Pre-check SELECT + UPSERT for a single row live
+  inside the same transaction so a concurrent writer can no longer
+  mis-classify an insert as an update.
+
+### Security
+- **Companion-file path-traversal guard (F1).** `ingest_memory_md`
+  validates `companion_path.resolve().relative_to(companion_dir.resolve())`
+  before `.exists()` so a crafted filename with parent-escape tokens
+  cannot even probe for file existence, let alone ingest arbitrary
+  files. Failed entries land in `skipped_malformed`.
+- **HTTP server hardening (8 reviewer findings + 1 bonus).** DB path
+  in `/inspect` responses is now the filename only (no absolute host
+  path); sqlite exception handlers return a generic message (no schema
+  leak); SessionStart hook `_is_safe_url()` blocks `file://`, `ftp://`,
+  `gopher://` so a poisoned `PARALLAX_API_URL` can't exfiltrate the
+  Bearer token; `vault_path` field validator rejects `..`, absolute
+  paths, drive letters, and NUL; OpenAPI docs (`/docs`, `/redoc`,
+  `/openapi.json`) gated behind `PARALLAX_DOCS_ENABLED=1`.
+
+### Fixed
+- Pydantic + tenacity declared as runtime dependencies (were
+  transitively imported but not listed in `[project.dependencies]`,
+  causing fresh-clone `pytest` collection failures under ADR-006
+  Day-0 scaffold).
+
+### Tests
+- 66 new Lane C tests (schema, ingest, privacy v2, path-traversal,
+  atomicity, export, regenerate-atomic) plus the Phase A+B server
+  and auth suites. Full suite: 421 passed, coverage 87.37% (gate 80%).
+  `ruff check` clean on all new modules.
+
+### Notes for Phase 2 switchover (must-do before flipping `.preview -> live`)
+- **S1**: `memory_cards_metadata` migration + `POST /ingest/memory_md`
+  endpoint + hook-side sha256 staleness detection + auto re-ingest.
+  Without this, Phase 2 would overwrite fresh auto-memory edits with
+  stale ingested data.
+- **S3**: Preview file metadata comment (`<!-- parallax-export: ... -->`)
+  + skip-write-if-unchanged in `regenerate.py`. Keeps `diff.log`
+  signal-to-noise high through the 7-day observation window.
+
 ## [0.5.0] - 2026-04-20
 
 ### Added
