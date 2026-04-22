@@ -17,6 +17,7 @@ from parallax.router.contracts import (
     RetrievalEvidence,
 )
 from parallax.router.crosswalk_seed import seed_hash
+from parallax.router.types import QueryType
 
 __all__ = ["MockMemoryRouter"]
 
@@ -46,13 +47,18 @@ class MockMemoryRouter:
         raise NotImplementedError(_FREEZE_MSG.format(method="backfill"))
 
     def health(self) -> HealthReport:
-        """Return a real HealthReport — the one port method that works in freeze mode."""
-        from parallax.router.config import MEMORY_ROUTER  # late import avoids circular
+        """Return a real HealthReport — the one port method that works in freeze mode.
+
+        Reads the MEMORY_ROUTER flag via is_router_enabled() (dynamic env read)
+        rather than the module-level Final constant, so the reported flag value
+        tracks runtime env changes. M-3 hardening from 2-agent review.
+        """
+        from parallax.router.config import is_router_enabled  # late import avoids circular
 
         return HealthReport(
             ok=True,
-            flag_enabled=MEMORY_ROUTER,
-            query_type_count=5,
+            flag_enabled=is_router_enabled(),
+            query_type_count=len(QueryType),
             ports_registered=_PORTS,
             crosswalk_seed_hash=seed_hash(),
         )

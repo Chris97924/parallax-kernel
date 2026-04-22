@@ -29,6 +29,11 @@ _RAW: dict[str, QueryType] = {
 }
 
 CROSSWALK_SEED: types.MappingProxyType[str, QueryType] = types.MappingProxyType(_RAW)
+# Sever the mutable handle: MappingProxyType holds a reference to _RAW, so the
+# seed data stays alive, but no code outside this module can reach _RAW to
+# mutate it (e.g. inject Intent.FALLBACK and bypass the fail-closed resolve()).
+# H-1 hardening from 2-agent review.
+del _RAW
 
 
 class UnroutableQueryError(Exception):

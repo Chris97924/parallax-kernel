@@ -29,17 +29,15 @@ def test_is_router_enabled_falsy(monkeypatch: pytest.MonkeyPatch, val: str) -> N
 
 
 def test_health_reflects_flag_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """health().flag_enabled must track dynamic env; confirms M-3 hardening."""
     monkeypatch.setenv("MEMORY_ROUTER", "false")
-    # Reload config to get fresh flag value via is_router_enabled (dynamic path)
-    assert is_router_enabled() is False
+    assert MockMemoryRouter().health().flag_enabled is False
 
 
 def test_health_reflects_flag_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """health().flag_enabled must track dynamic env; confirms M-3 hardening."""
     monkeypatch.setenv("MEMORY_ROUTER", "true")
-    # MockMemoryRouter.health() reads config.MEMORY_ROUTER at call time via late import
-    # But MEMORY_ROUTER is Final captured at import time; health() uses the late import
-    # which re-reads the module-level constant. We test is_router_enabled() for dynamic path.
-    assert is_router_enabled() is True
+    assert MockMemoryRouter().health().flag_enabled is True
 
 
 def test_health_report_ok() -> None:

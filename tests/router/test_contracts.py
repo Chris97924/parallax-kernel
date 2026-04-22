@@ -170,19 +170,18 @@ def test_arbitration_decision_fields() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Invariant (writes_performed == 0 when dry_run=True) is enforceable only "
+        "by the real BackfillPort adapter landing in Lane D-2. The dataclass "
+        "itself has no __post_init__; testing it here is tautological. "
+        "SF2 waiver from 2-agent review."
+    ),
+)
 def test_backfill_report_dry_run_writes_zero() -> None:
-    """INVARIANT: writes_performed == 0 when dry_run=True (enforced in test)."""
-    req = BackfillRequest(user_id="u1", crosswalk_version="v1", dry_run=True)
-    report = BackfillReport(
-        rows_examined=100,
-        rows_mapped=80,
-        rows_unmapped=15,
-        rows_conflict=5,
-        writes_performed=0,
-        arbitrations=(),
-    )
-    if req.dry_run:
-        assert report.writes_performed == 0
+    """Placeholder: real invariant test lives with the D-2 adapter."""
+    raise AssertionError("deferred to Lane D-2")
 
 
 # ---------------------------------------------------------------------------

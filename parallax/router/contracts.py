@@ -8,6 +8,7 @@ parallax.retrieval.contracts — NOT redefined here.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -41,11 +42,17 @@ class QueryRequest:
 
 @dataclass(frozen=True)
 class IngestRequest:
-    """Request to persist a memory or claim payload into the router store."""
+    """Request to persist a memory or claim payload into the router store.
+
+    payload is typed as Mapping (not dict) to signal read-only intent. The
+    frozen=True flag only freezes field reassignment; the underlying dict
+    object is still mutable by anyone holding the original reference.
+    SF1 hardening from 2-agent review.
+    """
 
     user_id: str
     kind: Literal["memory", "claim"]
-    payload: dict[str, Any]
+    payload: Mapping[str, Any]
     source_id: str | None = None
 
 
@@ -129,7 +136,15 @@ class BackfillReport:
 
 @dataclass(frozen=True)
 class HealthReport:
-    """Router health and introspection snapshot."""
+    """Router health and introspection snapshot.
+
+    WARNING (Lane D-2): the fields crosswalk_seed_hash, ports_registered, and
+    flag_enabled are internal-topology recon assets. Before wiring this type
+    into any unauthenticated HTTP endpoint (e.g. /inspect/health), either
+    gate the endpoint behind auth middleware or emit a stripped public
+    variant (e.g. {"ok": bool}) for unauthenticated callers.
+    H-2 hardening note from 2-agent review.
+    """
 
     ok: bool
     flag_enabled: bool

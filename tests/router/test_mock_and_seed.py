@@ -5,7 +5,6 @@ from __future__ import annotations
 from parallax.router.contracts import BackfillRequest, HealthReport, IngestRequest, QueryRequest
 from parallax.router.crosswalk_seed import CROSSWALK_SEED, UnroutableQueryError, resolve, seed_hash
 from parallax.router.mock_adapter import MockMemoryRouter
-from parallax.router.ports import BackfillPort, IngestPort, InspectPort, QueryPort
 from parallax.router.types import QueryType
 
 # ---------------------------------------------------------------------------
@@ -61,25 +60,8 @@ def test_health_ports_registered() -> None:
     assert report.ports_registered == ("QueryPort", "IngestPort", "InspectPort", "BackfillPort")
 
 
-# ---------------------------------------------------------------------------
-# Structural isinstance checks (runtime_checkable)
-# ---------------------------------------------------------------------------
-
-
-def test_mock_is_query_port() -> None:
-    assert isinstance(MockMemoryRouter(), QueryPort)
-
-
-def test_mock_is_ingest_port() -> None:
-    assert isinstance(MockMemoryRouter(), IngestPort)
-
-
-def test_mock_is_inspect_port() -> None:
-    assert isinstance(MockMemoryRouter(), InspectPort)
-
-
-def test_mock_is_backfill_port() -> None:
-    assert isinstance(MockMemoryRouter(), BackfillPort)
+# Structural isinstance(MockMemoryRouter, <Port>) checks live in
+# test_ports_protocol.py to avoid duplication (SF3 waiver from 2-agent review).
 
 
 # ---------------------------------------------------------------------------
