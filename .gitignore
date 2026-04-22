@@ -56,3 +56,37 @@ migration/
 db/
 .obsidian/
 __pycache__/
+
+# Local working scratch (session-scoped PRDs, progress logs, Notion fetches)
+prd*.json
+progress*.txt
+resume_note_*.md
+3lane_fetched*.md
+notion_3lane*.md
+archive_page.md
+decode_notion*.py
+extract_archive.py
+
+# OMC state (session-local)
+.omc/
+sessions/
+state/
+project-memory.json
+
+# Eval outputs (large jsonl / benchmark results)
+eval/results/*.jsonl
+eval/results/*.summary.json
+eval/results/phase2_ladder/
+
+# mkdocs build output
+site/
+
+# Eval WIP (not ready for commit yet — broken tests + ladder scripts tracked separately)
+tests/smoke/
+tests/test_llm_call_keys.py
+tests/test_longmemeval_parse_verdict.py
+tests/test_longmemeval_no_memory.py
+eval/longmemeval/reproduce.py
+eval/run_phase2_ladder.sh
+eval/run_phase2_nim.sh
+eval/run_phase2_pro.sh
