@@ -30,6 +30,10 @@ __all__ = [
     "BackfillPort",
     # mock
     "MockMemoryRouter",
+    # real adapter (Lane D-2)
+    "RealMemoryRouter",
+    # backfill (Lane D-2)
+    "BackfillRunner",
     # crosswalk
     "CROSSWALK_SEED",
     "resolve",
@@ -58,6 +62,8 @@ _LAZY: dict[str, tuple[str, str]] = {
     "InspectPort": ("parallax.router.ports", "InspectPort"),
     "BackfillPort": ("parallax.router.ports", "BackfillPort"),
     "MockMemoryRouter": ("parallax.router.mock_adapter", "MockMemoryRouter"),
+    "RealMemoryRouter": ("parallax.router.real_adapter", "RealMemoryRouter"),
+    "BackfillRunner": ("parallax.router.backfill", "BackfillRunner"),
     "CROSSWALK_SEED": ("parallax.router.crosswalk_seed", "CROSSWALK_SEED"),
     "resolve": ("parallax.router.crosswalk_seed", "resolve"),
     "UnroutableQueryError": ("parallax.router.crosswalk_seed", "UnroutableQueryError"),
