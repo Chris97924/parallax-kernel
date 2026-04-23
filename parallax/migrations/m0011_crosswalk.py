@@ -1,7 +1,7 @@
 """Migration 0011 — crosswalk table for dual-memory router mapping.
 
 Adds ``crosswalk`` as the canonical mapping table between Parallax entities
-and external semantic documents (e.g., DPKG/Engram adapters).
+and external semantic documents (e.g., Aphelion/Engram adapters).
 """
 
 from __future__ import annotations

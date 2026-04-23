@@ -1,4 +1,4 @@
-# Parallax Exchange Profile for DPKG
+# Parallax Exchange Profile for Aphelion
 
 **Version:** 0.1.0  
 **Status:** Provisional  
@@ -7,11 +7,11 @@
 ## Purpose
 
 This document defines Parallax's adapter-level exchange profile referenced by
-DPKG `spec/reserved-namespaces.md`.
+Aphelion `spec/reserved-namespaces.md`.
 
-DPKG treats `parallax:*` keys as opaque and excludes them from identity
+Aphelion treats `parallax:*` keys as opaque and excludes them from identity
 (`content_hash`). This file defines Parallax-side meaning for keys that may be
-carried through DPKG payloads.
+carried through Aphelion payloads.
 
 ## Current Profile
 
@@ -30,8 +30,8 @@ revision.
 ## Compatibility Notes
 
 1. `parallax:*` keys are metadata-only and MUST NOT be interpreted as canonical
-   DPKG identity fields.
+   Aphelion identity fields.
 2. Producers SHOULD avoid embedding secrets in `parallax:*` keys because they
    may be stored and echoed by downstream tools.
-3. Future profile revisions may add new optional keys without changing DPKG
+3. Future profile revisions may add new optional keys without changing Aphelion
    core spec version.
