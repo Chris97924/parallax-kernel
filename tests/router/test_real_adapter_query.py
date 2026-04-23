@@ -104,11 +104,23 @@ def _assert_evidence_contract(ev: RetrievalEvidence, query_type: QueryType) -> N
     assert ev.stages == ("real_adapter_dispatch",)
     assert f"query_type={query_type.value}" in ev.notes
     assert f"retriever={QUERY_DISPATCH[query_type]}" in ev.notes
-    # hits is a tuple of dicts with exactly the right keys
+    # hits is a tuple of dicts with router evidence payload keys
     assert isinstance(ev.hits, tuple)
     for hit in ev.hits:
         assert isinstance(hit, dict)
-        assert set(hit.keys()) == {"id", "text", "created_at", "source_id", "kind"}
+        assert set(hit.keys()) == {
+            "id",
+            "text",
+            "created_at",
+            "source_id",
+            "kind",
+            "score",
+            "evidence",
+            "full",
+            "explain",
+        }
+        assert isinstance(hit["score"], float)
+        assert isinstance(hit["explain"], dict)
     # len(hits) >= 0 — test passes on contract, not count
     assert len(ev.hits) >= 0
 
@@ -231,7 +243,7 @@ def test_real_router_is_backfill_port(conn: sqlite3.Connection) -> None:
 
 
 # ---------------------------------------------------------------------------
-# NotImplementedError stubs
+# NotImplementedError stubs — ingest/backfill defer to Lane D-3
 # ---------------------------------------------------------------------------
 
 

@@ -1,14 +1,7 @@
-"""RealMemoryRouter — Lane D-2 real adapter: query() dispatches to parallax.retrieve.*.
+"""RealMemoryRouter real adapter for query/ingest/backfill routing.
 
-Lane D-3 deferred items (explicit, not silently hidden):
-1. IngestPort.ingest real implementation — raises NotImplementedError in this lane.
-2. Field normalization layer (memory.body / claim.object_ / event.payload_text
-   canonical unification — Sonnet Critic's flagged tech debt).
-3. ArbitrationDecision CLI view.
-4. diff-audit human review gate.
-5. Server-side flag wiring in parallax/server/routes/query.py — flag gate lives at
-   the caller boundary; RealMemoryRouter deliberately does NOT check is_router_enabled()
-   inside its methods (see class docstring).
+Flag gate wiring remains at caller boundary (server route / CLI): this adapter
+deliberately does NOT check ``is_router_enabled()`` inside its methods.
 """
 
 from __future__ import annotations
@@ -99,18 +92,22 @@ class RealMemoryRouter:
             hits = _retrieve.recent_context(
                 self._conn, user_id=request.user_id, limit=capped_limit
             )
+            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.ARTIFACT_CONTEXT:
             hits = _retrieve.by_file(
                 self._conn, user_id=request.user_id, path=request.q, limit=capped_limit
             )
+            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.ENTITY_PROFILE:
             hits = _retrieve.by_entity(
                 self._conn, user_id=request.user_id, subject=request.q, limit=capped_limit
             )
+            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.CHANGE_TRACE:
             hits = _retrieve.by_decision(
                 self._conn, user_id=request.user_id, limit=capped_limit
             )
+            retriever_name = QUERY_DISPATCH[request.query_type]
         else:  # TEMPORAL_CONTEXT — since/until already validated above
             hits = _retrieve.by_timeline(
                 self._conn,
@@ -119,16 +116,19 @@ class RealMemoryRouter:
                 until=request.until,  # type: ignore[arg-type]
                 limit=capped_limit,
             )
-
-        retriever_name = QUERY_DISPATCH[request.query_type]
+            retriever_name = QUERY_DISPATCH[request.query_type]
 
         hit_dicts = tuple(
             {
                 "id": h.entity_id,
                 "text": h.title,
                 "created_at": (h.full or {}).get("created_at", "") if h.full else "",
-                "source_id": getattr(h, "source_id", "") or "",
+                "source_id": (h.full or {}).get("source_id", "") if h.full else "",
                 "kind": h.entity_kind,
+                "score": h.score,
+                "evidence": h.evidence,
+                "full": h.full if h.full is not None else h.evidence,
+                "explain": h.explain,
             }
             for h in hits
         )
@@ -149,7 +149,12 @@ class RealMemoryRouter:
         raise NotImplementedError(_D2_FREEZE_MSG.format(method="ingest"))
 
     def backfill(self, request: BackfillRequest) -> BackfillReport:
-        """Raise NotImplementedError — full backfill lands in Lane D-3."""
+        """Raise NotImplementedError — full backfill lands in Lane D-3.
+
+        BackfillRunner itself is callable directly with dry_run=False and
+        writes only to crosswalk; the router boundary stays Lane-D-2 frozen
+        so the wiring decision is made once in Lane D-3 server work.
+        """
         raise NotImplementedError(_D2_FREEZE_MSG.format(method="backfill"))
 
     def health(self) -> HealthReport:
