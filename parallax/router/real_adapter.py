@@ -92,22 +92,18 @@ class RealMemoryRouter:
             hits = _retrieve.recent_context(
                 self._conn, user_id=request.user_id, limit=capped_limit
             )
-            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.ARTIFACT_CONTEXT:
             hits = _retrieve.by_file(
                 self._conn, user_id=request.user_id, path=request.q, limit=capped_limit
             )
-            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.ENTITY_PROFILE:
             hits = _retrieve.by_entity(
                 self._conn, user_id=request.user_id, subject=request.q, limit=capped_limit
             )
-            retriever_name = QUERY_DISPATCH[request.query_type]
         elif request.query_type is QueryType.CHANGE_TRACE:
             hits = _retrieve.by_decision(
                 self._conn, user_id=request.user_id, limit=capped_limit
             )
-            retriever_name = QUERY_DISPATCH[request.query_type]
         else:  # TEMPORAL_CONTEXT — since/until already validated above
             hits = _retrieve.by_timeline(
                 self._conn,
@@ -116,7 +112,8 @@ class RealMemoryRouter:
                 until=request.until,  # type: ignore[arg-type]
                 limit=capped_limit,
             )
-            retriever_name = QUERY_DISPATCH[request.query_type]
+
+        retriever_name = QUERY_DISPATCH[request.query_type]
 
         hit_dicts = tuple(
             {

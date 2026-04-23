@@ -29,6 +29,10 @@ _BUG_RE = re.compile(r"^(fix|bug[_-]?fix|bugfix)(:|$)", re.IGNORECASE)
 # H-1 hard cap: scope='all' still bounded to protect memory / latency.
 _MAX_BACKFILL_ROWS = 10_000
 
+# Identifier allowlist for _table_snapshot — sqlite has no bind-parameter for
+# table names, so the f-string SELECT must be guarded against caller drift.
+_SNAPSHOT_TABLES = frozenset({"events", "claims", "memories", "decisions", "crosswalk"})
+
 
 def _table_snapshot(conn: sqlite3.Connection, table: str) -> dict[str, str | int]:
     """Return count + content digest for *table*.
@@ -36,6 +40,8 @@ def _table_snapshot(conn: sqlite3.Connection, table: str) -> dict[str, str | int
     Uses SELECT * ORDER BY rowid to stay schema-agnostic and still catch
     in-place UPDATE changes that count-only fingerprints miss.
     """
+    if table not in _SNAPSHOT_TABLES:
+        raise ValueError(f"_table_snapshot: table {table!r} not in allowlist")
     rows = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid').fetchall()
     digest = hashlib.sha256()
     for row in rows:
