@@ -43,12 +43,43 @@ dispatch at the **payload level**: `QueryRequest.params` carries a
 or `parallax.retrieve.by_bug_fix` (when `legacy_kind == "bug"`).
 
 - `CROSSWALK_SEED` unchanged (both `decision` and `bug` → `CHANGE_TRACE`).
-- `QueryRequest.params` contract: include `legacy_kind: str | None`.
 - `RealMemoryRouter.query` for `CHANGE_TRACE`:
-  - `params.legacy_kind == "bug"` → `parallax.retrieve.by_bug_fix`
+  - `params.get("legacy_kind") == "bug"` → `parallax.retrieve.by_bug_fix`
   - otherwise → `parallax.retrieve.by_decision`
 - Legacy-to-router adapter shim populates `legacy_kind` with the original
   RetrieveKind string (`"decision"`, `"bug"`, ...).
+
+### Schema change required (D-1 surface, additive only)
+
+`QueryRequest` (currently `parallax/router/contracts.py:30-40`) does NOT
+yet carry a `params` field. This ADR prescribes adding one as an
+**additive, non-breaking** change to the D-1 contract:
+
+```python
+@dataclass(frozen=True)
+class QueryRequest:
+    query_type: QueryType
+    user_id: str
+    q: str = ""
+    limit: int = 10
+    since: str | None = None
+    until: str | None = None
+    level: int = 1
+    params: Mapping[str, Any] | None = None   # NEW — default None, backward compatible
+```
+
+Default `None` means all existing callers continue to work unchanged;
+only router-aware call sites populate it. `params` is typed as
+`Mapping[str, Any] | None` (not `dict`) to keep the frozen-dataclass
+read-only intent consistent with `IngestRequest.payload` (see SF1 note
+in `contracts.py`). This is explicitly a D-1 contract amendment, not a
+D-1 re-ship — same 5-value `QueryType` enum, same four capability ports,
+same eight frozen dataclasses; only `QueryRequest` gains one optional
+field.
+
+`CROSSWALK_SEED` / `seed_hash()` / mock router do NOT need to change.
+Downstream D-3 work adds the field and the `legacy_kind` key convention
+in the same commit; no separate D-1 patch needed.
 
 ## Alternatives considered
 
@@ -127,6 +158,13 @@ the `legacy_kind="bug"` input) and compare e2e accuracy against the
 v0.5 `by_bug_fix` baseline. Regression tolerance: **−2 percentage
 points max**. If regression exceeds 2pp, open a follow-up ADR re-opening
 the choice set (B and C become eligible again).
+
+> **Eval harness dependency**: `eval/longmemeval/` currently has no
+> bug-subset filter or `MEMORY_ROUTER=true` vs `=false` comparison
+> harness. This is a D-3 planning line item — the gate can be evaluated
+> only after a thin subset-filter script lands (likely alongside
+> US-D3-08 or as a new advance item). AC-3 therefore blocks the
+> default-on flip, not the initial Lane D-3 landing.
 
 **AC-4 (no silent path).** When `legacy_kind` is `None` on a
 `CHANGE_TRACE` query, emit a debug log entry marking "legacy_kind
