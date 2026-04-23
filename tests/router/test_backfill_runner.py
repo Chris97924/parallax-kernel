@@ -7,6 +7,7 @@ import sqlite3
 import pytest
 
 from parallax.ingest import ingest_claim, ingest_memory
+from parallax.migrations import migrate_to_latest
 
 # Intentional private import for unit coverage
 from parallax.router.backfill import (
@@ -14,6 +15,7 @@ from parallax.router.backfill import (
     _classify_claim_predicate,  # noqa: PLC2701
 )
 from parallax.router.contracts import BackfillReport, BackfillRequest
+from parallax.sqlite_store import connect
 
 # `conn` fixture is provided by tests/conftest.py with proper try/finally
 # teardown — do not redefine locally (SF1 fix from Lane D-2 python review).
@@ -22,35 +24,102 @@ _USER = "test_user_002"
 
 
 # ---------------------------------------------------------------------------
-# dry_run=False raises ValueError with exact message
+# dry_run=False performs crosswalk writes (core tables remain read-only)
 # ---------------------------------------------------------------------------
 
 
-def test_dry_run_false_raises_value_error(conn: sqlite3.Connection) -> None:
+def test_dry_run_false_writes_crosswalk(conn: sqlite3.Connection) -> None:
+    ingest_claim(
+        conn,
+        user_id=_USER,
+        subject="stack",
+        predicate="decision:choose-stack",
+        object_="python",
+    )
+    ingest_memory(
+        conn,
+        user_id=_USER,
+        title="Memo A",
+        summary="summary a",
+        vault_path="a.md",
+    )
+
+    before_claims = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
+    before_memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    before_events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    before_decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+
     runner = BackfillRunner(conn)
     req = BackfillRequest(
         user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
+        crosswalk_version="laned3_seed_v1",
         dry_run=False,
         scope="sample",
     )
-    with pytest.raises(
-        ValueError,
-        match="Lane D-2 BackfillRunner supports dry_run=True only",
-    ):
-        runner.run(req)
+    report = runner.run(req)
+    assert report.writes_performed >= 2
 
+    after_claims = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
+    after_memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    after_events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    after_decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
 
-def test_dry_run_false_message_exact(conn: sqlite3.Connection) -> None:
-    runner = BackfillRunner(conn)
-    req = BackfillRequest(
-        user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
-        dry_run=False,
+    assert (before_claims, before_memories, before_events, before_decisions) == (
+        after_claims,
+        after_memories,
+        after_events,
+        after_decisions,
     )
-    with pytest.raises(ValueError) as exc_info:
-        runner.run(req)
-    assert "real writes land in Lane D-3" in str(exc_info.value)
+
+    crosswalk_rows = conn.execute(
+        "SELECT COUNT(*) FROM crosswalk WHERE user_id = ?",
+        (_USER,),
+    ).fetchone()[0]
+    assert crosswalk_rows >= 2
+
+
+def test_dry_run_false_persists_crosswalk_after_reopen(tmp_path) -> None:
+    db_path = tmp_path / "backfill_persist.db"
+    conn = connect(db_path)
+    try:
+        migrate_to_latest(conn)
+        ingest_claim(
+            conn,
+            user_id=_USER,
+            subject="stack",
+            predicate="decision:choose-stack",
+            object_="python",
+        )
+        ingest_memory(
+            conn,
+            user_id=_USER,
+            title="Memo A",
+            summary="summary a",
+            vault_path="a.md",
+        )
+
+        runner = BackfillRunner(conn)
+        req = BackfillRequest(
+            user_id=_USER,
+            crosswalk_version="laned3_seed_v1",
+            dry_run=False,
+            scope="sample",
+        )
+        report = runner.run(req)
+        assert report.writes_performed >= 2
+    finally:
+        conn.close()
+
+    reopened = connect(db_path)
+    try:
+        persisted = reopened.execute(
+            "SELECT COUNT(*) FROM crosswalk WHERE user_id = ?",
+            (_USER,),
+        ).fetchone()[0]
+    finally:
+        reopened.close()
+
+    assert persisted >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +131,7 @@ def test_empty_db_scope_sample(conn: sqlite3.Connection) -> None:
     runner = BackfillRunner(conn)
     req = BackfillRequest(
         user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
+        crosswalk_version="laned3_seed_v1",
         dry_run=True,
         scope="sample",
     )
@@ -123,7 +192,7 @@ def test_seeded_scope_sample(conn: sqlite3.Connection) -> None:
     runner = BackfillRunner(conn)
     req = BackfillRequest(
         user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
+        crosswalk_version="laned3_seed_v1",
         dry_run=True,
         scope="sample",
     )
@@ -154,12 +223,12 @@ def test_zero_write_invariant_raises_on_fingerprint_mismatch(
         call_count += 1
         return "a" * 64 if call_count == 1 else "b" * 64
 
-    monkeypatch.setattr(_backfill_mod, "_write_fingerprint", _fake_fingerprint)
+    monkeypatch.setattr(_backfill_mod, "_core_fingerprint", _fake_fingerprint)
 
     runner = BackfillRunner(conn)
     req = BackfillRequest(
         user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
+        crosswalk_version="laned3_seed_v1",
         dry_run=True,
         scope="sample",
     )
@@ -169,7 +238,7 @@ def test_zero_write_invariant_raises_on_fingerprint_mismatch(
     msg = str(exc_info.value)
     assert "a" * 16 in msg
     assert "b" * 16 in msg
-    assert "zero-write invariant" in msg
+    assert "read-only core invariant" in msg
 
 
 # ---------------------------------------------------------------------------

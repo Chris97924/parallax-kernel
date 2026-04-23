@@ -12,41 +12,105 @@ Lane D-3 deferred items (explicit, not silently hidden):
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
+from contextlib import nullcontext
 
 from parallax.router.contracts import BackfillReport, BackfillRequest
 from parallax.router.types import MappingState
+from parallax.sqlite_store import now_iso
 
 __all__ = ["BackfillRunner"]
 
 # Precompiled regex for bug-fix predicate classification (case-insensitive).
 _BUG_RE = re.compile(r"^(fix|bug[_-]?fix|bugfix)(:|$)", re.IGNORECASE)
 
-# H-1 (Lane D-2 security review): hard cap on per-scope row count so scope='all'
-# cannot drag millions of rows into memory via an attacker-controlled request.
+# H-1 hard cap: scope='all' still bounded to protect memory / latency.
 _MAX_BACKFILL_ROWS = 10_000
 
 
-def _write_fingerprint(conn: sqlite3.Connection) -> str:
-    """Return sha256 hex of pipe-joined COUNT(*) values across 4 core tables.
+def _table_snapshot(conn: sqlite3.Connection, table: str) -> dict[str, str | int]:
+    """Return count + content digest for *table*.
 
-    Format: sha256('{events_count}|{claims_count}|{memories_count}|{decisions_count}')
-    Returns a 64-character hex string.
-
-    LIMITATION (M-1 from Lane D-2 security review): this fingerprint detects
-    INSERT and DELETE but NOT UPDATE — in-place edits that preserve row counts
-    are invisible to this check. A buggy Lane D-3 runner that issues UPDATE
-    instead of INSERT would pass zero-write verification silently. Lane D-3
-    must add a content-aware proof (e.g. per-table content-hash aggregate) if
-    UPDATE paths land.
+    Uses SELECT * ORDER BY rowid to stay schema-agnostic and still catch
+    in-place UPDATE changes that count-only fingerprints miss.
     """
-    events_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    claims_count = conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
-    memories_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
-    decisions_count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
-    payload = f"{events_count}|{claims_count}|{memories_count}|{decisions_count}"
+    rows = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid').fetchall()
+    digest = hashlib.sha256()
+    for row in rows:
+        for value in tuple(row):
+            digest.update(b"\x1f")
+            token = "<NULL>" if value is None else str(value)
+            digest.update(token.encode("utf-8"))
+            digest.update(b"\x1e")
+        digest.update(b"\n")
+    return {"count": len(rows), "digest": digest.hexdigest()}
+
+
+def _core_fingerprint(conn: sqlite3.Connection) -> str:
+    """Content-aware fingerprint of immutable core tables."""
+    snapshot = {
+        table: _table_snapshot(conn, table)
+        for table in ("events", "claims", "memories", "decisions")
+    }
+    payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _crosswalk_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='crosswalk'"
+    ).fetchone()
+    return row is not None
+
+
+def _upsert_crosswalk(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    canonical_ref: str,
+    target_kind: str,
+    target_id: str,
+    query_type: str | None,
+    state: MappingState,
+    content_hash: str,
+    source_id: str | None,
+    vault_path: str | None,
+) -> None:
+    now = now_iso()
+    conn.execute(
+        """
+        INSERT INTO crosswalk (
+            user_id, canonical_ref, parallax_target_kind, parallax_target_id,
+            query_type, state, content_hash, source_id, vault_path,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, canonical_ref) DO UPDATE SET
+            parallax_target_kind = excluded.parallax_target_kind,
+            parallax_target_id = excluded.parallax_target_id,
+            query_type = excluded.query_type,
+            state = excluded.state,
+            content_hash = excluded.content_hash,
+            source_id = excluded.source_id,
+            vault_path = excluded.vault_path,
+            updated_at = excluded.updated_at
+        """,
+        (
+            user_id,
+            canonical_ref,
+            target_kind,
+            target_id,
+            query_type,
+            state.value,
+            content_hash,
+            source_id,
+            vault_path,
+            now,
+            now,
+        ),
+    )
 
 
 def _classify_claim_predicate(predicate: str) -> str:
@@ -71,31 +135,32 @@ def _classify_claim_predicate(predicate: str) -> str:
 class BackfillRunner:
     """Read-only enumeration of v0.5 claims + memories through Crosswalk.
 
-    Zero-write invariant: run() captures a sha256 fingerprint of all four
-    core table row counts before and after enumeration and raises RuntimeError
-    if they differ — proving no rows were written during the run.
+    Core-table invariant: run() fingerprints immutable core tables before/after
+    and raises RuntimeError on mismatch.
 
-    dry_run=False is explicitly rejected (ValueError) in this lane; real
-    writes land in Lane D-3.
+    dry_run=False writes crosswalk mappings only.
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
     def run(self, request: BackfillRequest) -> BackfillReport:
-        """Enumerate claims + memories via Crosswalk; prove zero writes.
+        """Enumerate claims + memories via Crosswalk.
 
-        Method-local import of parallax.router.crosswalk_seed avoids bringing
-        it into sys.modules at BackfillRunner instantiation time.
+        Invariants:
+        - Core tables (events/claims/memories/decisions) are read-only in both
+          dry_run and write mode.
+        - dry_run=False writes only to crosswalk.
         """
-        if not request.dry_run:
+        if not request.dry_run and not _crosswalk_exists(self._conn):
             raise ValueError(
-                "Lane D-2 BackfillRunner supports dry_run=True only;"
-                " real writes land in Lane D-3"
+                "crosswalk table is required for dry_run=False; apply latest migrations first"
             )
 
-        # Capture write fingerprint BEFORE enumeration.
-        fingerprint_pre = _write_fingerprint(self._conn)
+        core_pre = _core_fingerprint(self._conn)
+        crosswalk_pre = None
+        if _crosswalk_exists(self._conn):
+            crosswalk_pre = _table_snapshot(self._conn, "crosswalk")
 
         # Method-local import: keeps parallax.router package importable without
         # side-effects from crosswalk_seed at module level.
@@ -105,66 +170,107 @@ class BackfillRunner:
 
         rows_mapped = 0
         rows_unmapped = 0
+        writes_performed = 0
 
-        # --- Claims ---
-        claim_rows = self._conn.execute(
-            "SELECT claim_id, predicate FROM claims WHERE user_id = ?"
-            " ORDER BY created_at DESC, claim_id ASC LIMIT ?",
-            (request.user_id, limit),
-        ).fetchall()
+        write_context = self._conn if not request.dry_run else nullcontext()
+        with write_context:
+            # --- Claims ---
+            claim_rows = self._conn.execute(
+                "SELECT claim_id, predicate, content_hash, source_id FROM claims WHERE user_id = ?"
+                " ORDER BY created_at DESC, claim_id ASC LIMIT ?",
+                (request.user_id, limit),
+            ).fetchall()
 
-        for row in claim_rows:
-            predicate = row[1] if row[1] is not None else ""
-            probe_key = _classify_claim_predicate(predicate)
-            try:
-                resolve(probe_key)
-                state = MappingState.MAPPED
-            except UnroutableQueryError:
-                state = MappingState.UNMAPPED
-            # CONFLICT state is reachable in Lane D-3 once seed policies fan out;
-            # Lane D-2 invariant: rows_conflict always 0
-            if state == MappingState.MAPPED:
-                rows_mapped += 1
-            else:
-                rows_unmapped += 1
+            for row in claim_rows:
+                predicate = row[1] if row[1] is not None else ""
+                probe_key = _classify_claim_predicate(predicate)
+                mapped_query_type = None
+                try:
+                    mapped_query_type = resolve(probe_key)
+                    state = MappingState.MAPPED
+                except UnroutableQueryError:
+                    state = MappingState.UNMAPPED
 
-        # --- Memories ---
-        memory_rows = self._conn.execute(
-            "SELECT memory_id FROM memories WHERE user_id = ?"
-            " ORDER BY created_at DESC, memory_id ASC LIMIT ?",
-            (request.user_id, limit),
-        ).fetchall()
+                if state == MappingState.MAPPED:
+                    rows_mapped += 1
+                else:
+                    rows_unmapped += 1
 
-        for _row in memory_rows:
-            probe_key = "RetrieveKind.recent"
-            try:
-                resolve(probe_key)
-                state = MappingState.MAPPED
-            except UnroutableQueryError:
-                state = MappingState.UNMAPPED
-            # CONFLICT state is reachable in Lane D-3 once seed policies fan out;
-            # Lane D-2 invariant: rows_conflict always 0
-            if state == MappingState.MAPPED:
-                rows_mapped += 1
-            else:
-                rows_unmapped += 1
+                if not request.dry_run:
+                    _upsert_crosswalk(
+                        self._conn,
+                        user_id=request.user_id,
+                        canonical_ref=f"claim:{row[0]}",
+                        target_kind="claim",
+                        target_id=row[0],
+                        query_type=(mapped_query_type.value if mapped_query_type else None),
+                        state=state,
+                        content_hash=row[2],
+                        source_id=row[3],
+                        vault_path=None,
+                    )
+                    writes_performed += 1
 
-        rows_examined = len(claim_rows) + len(memory_rows)
+            # --- Memories ---
+            memory_rows = self._conn.execute(
+                "SELECT memory_id, content_hash, source_id, vault_path "
+                "FROM memories WHERE user_id = ?"
+                " ORDER BY created_at DESC, memory_id ASC LIMIT ?",
+                (request.user_id, limit),
+            ).fetchall()
 
-        # Capture write fingerprint AFTER enumeration.
-        fingerprint_post = _write_fingerprint(self._conn)
+            for row in memory_rows:
+                probe_key = "RetrieveKind.recent"
+                mapped_query_type = None
+                try:
+                    mapped_query_type = resolve(probe_key)
+                    state = MappingState.MAPPED
+                except UnroutableQueryError:
+                    state = MappingState.UNMAPPED
 
-        if fingerprint_pre != fingerprint_post:
-            raise RuntimeError(
-                f"BackfillRunner violated zero-write invariant:"
-                f" pre={fingerprint_pre[:16]} post={fingerprint_post[:16]}"
-            )
+                if state == MappingState.MAPPED:
+                    rows_mapped += 1
+                else:
+                    rows_unmapped += 1
+
+                if not request.dry_run:
+                    _upsert_crosswalk(
+                        self._conn,
+                        user_id=request.user_id,
+                        canonical_ref=f"memory:{row[0]}",
+                        target_kind="memory",
+                        target_id=row[0],
+                        query_type=(mapped_query_type.value if mapped_query_type else None),
+                        state=state,
+                        content_hash=row[1],
+                        source_id=row[2],
+                        vault_path=row[3],
+                    )
+                    writes_performed += 1
+
+            rows_examined = len(claim_rows) + len(memory_rows)
+
+            core_post = _core_fingerprint(self._conn)
+            crosswalk_post = None
+            if _crosswalk_exists(self._conn):
+                crosswalk_post = _table_snapshot(self._conn, "crosswalk")
+
+            if core_pre != core_post:
+                raise RuntimeError(
+                    "BackfillRunner violated read-only core invariant:"
+                    f" pre={core_pre[:16]} post={core_post[:16]}"
+                )
+
+            if request.dry_run and crosswalk_pre != crosswalk_post:
+                raise RuntimeError(
+                    "BackfillRunner dry_run violated no-write invariant on crosswalk table"
+                )
 
         return BackfillReport(
             rows_examined=rows_examined,
             rows_mapped=rows_mapped,
             rows_unmapped=rows_unmapped,
             rows_conflict=0,
-            writes_performed=0,
+            writes_performed=writes_performed,
             arbitrations=(),
         )

@@ -120,7 +120,7 @@ def test_integration_backfill_report(seeded_conn: sqlite3.Connection) -> None:
     runner = BackfillRunner(seeded_conn)
     req = BackfillRequest(
         user_id=_USER,
-        crosswalk_version="laned2_seed_v1",
+        crosswalk_version="laned3_seed_v1",
         dry_run=True,
         scope="sample",
     )
