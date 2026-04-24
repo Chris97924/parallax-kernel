@@ -7,7 +7,11 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-from parallax.migrations import migrate_down_to, migrate_to_latest
+from parallax.migrations import (
+    migrate_down_to,
+    migrate_to_latest,
+    migration_plan,
+)
 from parallax.sqlite_store import connect
 
 
@@ -60,6 +64,18 @@ def test_m0012_preserves_row_data(tmp_path: pathlib.Path) -> None:
         )
         conn.commit()
 
+        # Sanity check: row is readable via the pre-rename column before re-up.
+        # Guards against a regression where ``migrate_down_to(11)`` drops the
+        # table — without this, the post-rename assertion below would pass
+        # tautologically on a freshly rebuilt empty table.
+        pre_row = conn.execute(
+            "SELECT dpkg_doc_id FROM crosswalk "
+            "WHERE user_id = ? AND canonical_ref = ?",
+            ("u1", "claim:abc"),
+        ).fetchone()
+        assert pre_row is not None
+        assert pre_row[0] == "aphe-doc-123"
+
         migrate_to_latest(conn)
         assert "aphelion_doc_id" in _crosswalk_columns(conn)
 
@@ -89,8 +105,6 @@ def test_m0012_down_to_v11_restores_dpkg_doc_id(tmp_path: pathlib.Path) -> None:
 
 def test_m0012_is_registered_in_migration_plan(tmp_path: pathlib.Path) -> None:
     """m0012 shows up in a fresh DB's pending plan before any migration runs."""
-    from parallax.migrations import migration_plan
-
     conn = _fresh_conn(tmp_path)
     try:
         plan = migration_plan(conn)

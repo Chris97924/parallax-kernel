@@ -10,9 +10,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Completes the DPKG → Aphelion rebrand on the Parallax side (Aphelion v0.4.0
   shipped 2026-04-24 with `aphelion_spec_version` wire break). Uses
   `ALTER TABLE ... RENAME COLUMN` so existing rows (if any) are preserved.
-  Down-migration restores the old name. No runtime code referenced the
-  old column name yet — crosswalk was introduced in m0011 one release ago
-  and is still Lane D-3 scaffolding. Rollback: `migrate_down_to(target_version=11)`.
+  Down-migration restores the old name. m0012 also reconciles the on-disk
+  schema with `docs/phase4-dual-memory-prd.md` US-001, which has always
+  specified `aphelion_doc_id` — m0011 shipped under the legacy name and
+  m0012 closes that gap. No runtime code referenced the old column name
+  (`parallax/router/backfill.py` crosswalk upserts omit the doc-id column
+  entirely; no other reader exists), so the rename is transparent to
+  existing Lane D-1/D-2 code. `up()` / `down()` both guard for
+  `sqlite3.sqlite_version_info >= (3, 25, 0)` and raise a clear
+  `RuntimeError` on older libsqlite3 rather than a cryptic
+  `OperationalError`. Rollback: `migrate_down_to(target_version=11)`.
 
 ## [0.6.0] - 2026-04-22
 
