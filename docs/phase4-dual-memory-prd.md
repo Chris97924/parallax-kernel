@@ -91,7 +91,7 @@ semantic-constrained hybrid composer:
   - `canonical_ref` (PK, 格式 `memory:<id>` / `claim:<id>`)
   - `parallax_target_kind`
   - `parallax_target_id`
-  - `dpkg_doc_id`（nullable）
+  - `aphelion_doc_id`（nullable）
   - `vault_path`（nullable）
   - `content_hash`
   - `source_id`

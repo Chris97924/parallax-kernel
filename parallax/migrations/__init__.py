@@ -44,6 +44,7 @@ from parallax.migrations import (
     m0009_api_tokens,
     m0010_memory_cards,
     m0011_crosswalk,
+    m0012_crosswalk_aphelion_doc_id,
 )
 from parallax.sqlite_store import now_iso
 
@@ -135,6 +136,12 @@ MIGRATIONS: list[Migration] = [
         name="crosswalk",
         up=m0011_crosswalk.up,
         down=m0011_crosswalk.down,
+    ),
+    Migration(
+        version=12,
+        name="crosswalk_aphelion_doc_id",
+        up=m0012_crosswalk_aphelion_doc_id.up,
+        down=m0012_crosswalk_aphelion_doc_id.down,
     ),
 ]
 
@@ -242,6 +249,7 @@ _MIGRATION_MODULES: dict[int, object] = {
     9: m0009_api_tokens,
     10: m0010_memory_cards,
     11: m0011_crosswalk,
+    12: m0012_crosswalk_aphelion_doc_id,
 }
 
 # Matches table identifiers following the DDL/DML keywords we care about.

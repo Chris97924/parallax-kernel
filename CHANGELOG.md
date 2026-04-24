@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- **Migration m0012 — `crosswalk.dpkg_doc_id` renamed to `aphelion_doc_id`.**
+  Completes the DPKG → Aphelion rebrand on the Parallax side (Aphelion v0.4.0
+  shipped 2026-04-24 with `aphelion_spec_version` wire break). Uses
+  `ALTER TABLE ... RENAME COLUMN` so existing rows (if any) are preserved.
+  Down-migration restores the old name. No runtime code referenced the
+  old column name yet — crosswalk was introduced in m0011 one release ago
+  and is still Lane D-3 scaffolding. Rollback: `migrate_down_to(target_version=11)`.
+
 ## [0.6.0] - 2026-04-22
 
 Pre-release tag: `v0.6.0-pre1`. GA (`v0.6.0`) will land after a 7-day
