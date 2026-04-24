@@ -126,6 +126,22 @@ def run_one(
         logger.exception("ingest failed for %s", q.question_id)
         return _err_record(q, answer_model, judge_model, str(exc), stage="ingest")
 
+    # Fail loud when retrieval returns nothing. Passing an empty transcript
+    # to the answer model would produce a plausible hallucinated prediction
+    # with no signal that the context was missing — silent benchmark poison.
+    if use_retrieval and not transcript:
+        logger.warning(
+            "build_from_parallax_retrieval returned empty transcript for %s",
+            q.question_id,
+        )
+        return _err_record(
+            q,
+            answer_model,
+            judge_model,
+            "retrieval returned empty transcript",
+            stage="retrieval",
+        )
+
     try:
         ans: GeminiResult = call(
             model=answer_model,
