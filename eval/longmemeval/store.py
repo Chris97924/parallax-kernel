@@ -13,6 +13,7 @@ retrieval without changing this surface.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,6 +24,13 @@ from parallax import ingest_memory, memories_by_user, migrate_to_latest
 from parallax.sqlite_store import connect
 
 from eval.longmemeval.dataset import Question
+
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _tokenize(text: str) -> set[str]:
+    """Lowercase word-boundary tokenizer so "teal." matches "teal"."""
+    return set(_WORD_RE.findall(text.lower()))
 
 
 @contextmanager
@@ -82,3 +90,79 @@ def dump_via_memories(conn: sqlite3.Connection, user_id: str) -> str:
     rows = memories_by_user(conn, user_id)
     rows_sorted = sorted(rows, key=lambda r: r["vault_path"])
     return "\n".join(f"{r['title']}\n{r['summary']}" for r in rows_sorted)
+
+
+def build_from_parallax_retrieval(
+    conn: sqlite3.Connection,
+    q: Question,
+    *,
+    top_k: int = 64,
+    max_chars: int = 40000,
+) -> str:
+    """Retrieval-filtered transcript — reads from Parallax store, not from ``q``.
+
+    The v1 pipeline built the answer prompt from ``dump_all_sessions(q)``,
+    which walks the in-memory Question tuple and therefore never exercises the
+    Parallax store we just ingested into. That bypass hid any breakage in the
+    ingest/retrieve round-trip behind a 1M-ctx answer model.
+
+    This helper closes the loop:
+
+    1. Fetch every ingested memory row via ``memories_by_user(conn, ...)``.
+    2. Score each row by lexical overlap with ``q.question`` (BM25-stub — no
+       model dependency, deterministic, fast).
+    3. Keep the top ``top_k`` rows, stop early once ``max_chars`` is reached.
+    4. Emit a chronological transcript ordered by ``vault_path`` so temporal
+       questions keep the user's original arrival order.
+
+    The defaults are generous (64 rows / 40K chars) so short haystacks pass
+    through unfiltered; narrow them to actually exercise retrieval pressure.
+
+    Contract notes:
+
+    * Returns ``""`` when the store is empty. Callers that treat an empty
+      transcript as valid context will silently pass junk to an answer model;
+      ``run_one`` guards against this when ``use_retrieval=True``.
+    * ``max_chars`` is the soft cap on cumulative ``len(block)`` across all
+       blocks beyond the first. The first block is always emitted even if
+       it alone exceeds the cap — otherwise a single oversized memory would
+       produce an empty transcript, which is a worse failure mode.
+    * Ties in the relevance score (common when the question has zero lexical
+      overlap with a row) break deterministically on ``vault_path`` so
+      reruns produce bit-identical transcripts.
+    """
+    user_id = q.question_id
+    rows = memories_by_user(conn, user_id)
+    if not rows:
+        return ""
+
+    q_tokens = _tokenize(q.question)
+
+    def _score(row: dict[str, object]) -> float:
+        blob = f"{row.get('title') or ''} {row.get('summary') or ''}"
+        tokens = _tokenize(blob)
+        return len(q_tokens & tokens) / max(1, len(q_tokens))
+
+    scored: list[tuple[float, dict]] = [(_score(r), r) for r in rows]
+    # Primary: relevance descending. Secondary: vault_path ascending so
+    # zero-score ties (and any other ties) resolve deterministically.
+    scored.sort(key=lambda item: (-item[0], item[1].get("vault_path") or ""))
+    kept = [r for _, r in scored[:top_k]]
+
+    # Restore chronological order for the emitted transcript — relevance is used
+    # only to choose which rows survive the top_k + char budget.
+    kept.sort(key=lambda r: r.get("vault_path") or "")
+
+    lines: list[str] = []
+    total = 0
+    for r in kept:
+        title = r.get("title") or ""
+        summary = r.get("summary") or ""
+        block = f"{title}\n{summary}".strip()
+        if not block:
+            continue
+        if total + len(block) > max_chars and lines:
+            break
+        lines.append(block)
+        total += len(block)
+    return "\n\n".join(lines)

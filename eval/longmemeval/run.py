@@ -103,6 +103,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--answer-model", default="gemini-3.1-pro-preview")
     p.add_argument("--judge-model", default="gemini-3.1-pro-preview")
     p.add_argument("--max-output-tokens", type=int, default=512)
+    p.add_argument(
+        "--use-retrieval",
+        action="store_true",
+        help=(
+            "Build the answer prompt via build_from_parallax_retrieval() "
+            "(reads from Parallax store) instead of dump_all_sessions() "
+            "(v1 bypass). Default False preserves Run B reproducibility."
+        ),
+    )
     p.add_argument("--out", type=Path, required=True)
     p.add_argument(
         "--no-resume", action="store_true", help="ignore existing output file"
@@ -157,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             answer_model=args.answer_model,
             judge_model=args.judge_model,
             max_output_tokens=args.max_output_tokens,
+            use_retrieval=args.use_retrieval,
         )
         _append_jsonl(args.out, rec)
         return rec, time.time() - t_q
