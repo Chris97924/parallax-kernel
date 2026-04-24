@@ -1,10 +1,17 @@
 # Phase 4 PRD — Dual-Memory Router (Aphelion × Parallax)
 
-**狀態**: Draft
+**狀態**: Draft（2026-04-18 原稿）
 **日期**: 2026-04-18
 **前置**: Phase 3 (Extract 層 + Shadow Write) 完成於 commit `82fe6b9`
 **來源**: xcouncil 5-model 討論 + Opus 4.7 judge 收斂
 **長期目標**: Aphelion + Parallax 永久並存為雙記憶層，Engram 為未來升級點（非本階段）
+
+> **更新 (2026-04-24)**：Lane D-1（MEMORY_ROUTER contract freeze, PR #2）+ Lane D-2（Real adapter interface, PR #3）已 ship。本 PRD 的 `QueryType` enum 與 Port 命名已對齊 code：
+> - `QueryType` 5-value closed set — `parallax/router/types.py`
+> - 四個能力 Port — `parallax/router/ports.py`
+> - MockMemoryRouter / RealMemoryRouter — `parallax/router/{mock,real}_adapter.py`
+>
+> Routing dispatch（哪個 QueryType 走哪個 backend）與 hybrid composer 實作留在 Lane D-3。
 
 ---
 
@@ -24,33 +31,43 @@ Phase 4 就是把這個答案實作出來。
 
 ### 2.1 Query Taxonomy（硬合約，不自動分類）
 
-呼叫方**必須**明確傳 `QueryType`，router 不做 heuristic 猜測。
+呼叫方**必須**明確傳 `QueryType`，router 不做 heuristic 猜測。Lane D-1 contract freeze 的 5-value closed set（見 `parallax/router/types.py`）：
 
-| QueryType | 後端 | 範例 |
+| QueryType | 用途 | 範例 |
 |---|---|---|
-| `SEMANTIC_DISCOVERY` | Aphelion only | 「找和 X 相關的記憶」 |
-| `STATE_LOOKUP` | Parallax only | 「這個 claim 現在是 confirmed 還是 rejected」 |
-| `TIMELINE_AUDIT` | Parallax only | 「這個狀態是怎麼變過來的」 |
-| `HYBRID_SEMANTIC_CONSTRAINED` | Aphelion 召回 → Parallax filter/hydrate | 「找和 X 相關且目前 active 的內容」 |
-| `RECONCILIATION` | 雙查 diff（debug/audit only）| nightly 比對 |
+| `RECENT_CONTEXT` | 近期對話 + 多 session 連續性 | 「剛剛討論的那個 bug」 |
+| `ARTIFACT_CONTEXT` | 檔案 / 路徑 / artifact 記憶 | 「我在 parallax/router/*.py 寫了什麼」 |
+| `ENTITY_PROFILE` | Entity profile（user_fact / preference / named entity） | 「Chris 偏好什麼 stack」 |
+| `CHANGE_TRACE` | 決策 + bug fix（變更歷史） | 「這個欄位是怎麼演進過來的」 |
+| `TEMPORAL_CONTEXT` | when / before / after 時間窗查詢 | 「2026-04 之前發生過什麼」 |
 
-### 2.2 四個能力 Port（為 Engram 預留替換點）
+Backend 分派（哪個 QueryType 走 Aphelion / Parallax / hybrid）由 Lane D-3 routing policy 定義；interface-freeze dispatch table 占位在 `parallax/router/real_adapter.py::QUERY_DISPATCH`。Reconciliation（跨源 diff 稽核）為獨立 port，不是 `QueryType` enum 值，見 §US-007。
 
-```
-SemanticRecallPort      ← Aphelion 實作（未來 Engram 替換）
-CanonicalStatePort      ← Parallax 實作
-TemporalReplayPort      ← Parallax 實作
-MemoryFederationPort    ← hybrid composer + reconciler（不存資料）
-```
+### 2.2 四個能力 Port（Lane D-1 contract freeze）
 
-### 2.3 Hybrid 執行流程（取代 blind merge）
+見 `parallax/router/ports.py`，皆為 `@runtime_checkable` `Protocol`：
 
 ```
-HYBRID_SEMANTIC_CONSTRAINED:
-  1. Aphelion.semantic_recall(q)                   → candidates[]
-  2. Parallax.hydrate_by_crosswalk(candidates) → enriched[]
-  3. Parallax.filter_by_state(enriched, c)     → final[]
-  4. render(final): Aphelion snippet + Parallax authority
+QueryPort      ← query(QueryRequest)     -> RetrievalEvidence
+IngestPort     ← ingest(IngestRequest)   -> IngestResult
+InspectPort    ← health()                -> HealthReport
+BackfillPort   ← backfill(BackfillRequest) -> BackfillReport
+```
+
+兩個 adapter 都實作四個 port：`MockMemoryRouter`（Lane D-1 freeze，全部 `NotImplementedError`）、`RealMemoryRouter`（Lane D-2 freeze，dispatch 占位）。Engram 升級時替換 adapter，port 介面不動。
+
+### 2.3 Hybrid 執行流程（Lane D-3 待實作）
+
+Lane D-1 contract freeze 的 `QueryType` 是 5-value closed set，不含獨立的 hybrid enum 值。Hybrid composer（跨源 recall → hydrate → filter → render）由 Lane D-3 routing layer 實作，作為特定 `QueryType` 的 dispatch strategy，而非新的 enum 值。
+
+原始設計 sketch（保留為 Lane D-3 實作參考）：
+
+```
+semantic-constrained hybrid composer:
+  1. semantic_recall(q)                        → candidates[]
+  2. hydrate_by_crosswalk(candidates)          → enriched[]
+  3. filter_by_state(enriched, constraints)    → final[]
+  4. render(final): semantic snippet + state authority
 ```
 
 ### 2.4 衝突仲裁（欄位級，非全域）
@@ -84,19 +101,19 @@ HYBRID_SEMANTIC_CONSTRAINED:
 - [ ] 測試：insert / query / update 都過
 
 ### US-002: QueryType enum + Router
-- [ ] `parallax/router/types.py` 定義 `QueryType` enum
-- [ ] `parallax/router/__init__.py` 暴露 `MemoryQueryRouter`
-- [ ] Router 拒絕沒有 `query_type` 的請求（ValueError，不做自動分類）
-- [ ] 單元測試：每個 QueryType 路由正確
+- [ ] `parallax/router/types.py` 定義 `QueryType` enum（5-value closed set）
+- [ ] `parallax/router/__init__.py` 暴露 `MockMemoryRouter`（Lane D-1）+ `RealMemoryRouter`（Lane D-2）
+- [ ] Router 拒絕沒有 `query_type` 的請求（`UnroutableQueryError`，不做自動分類）
+- [ ] 單元測試：每個 QueryType 路由正確（實作在 Lane D-3）
 
 ### US-003: Capability Ports
-- [ ] `parallax/router/ports.py` 定義四個 Protocol：
-  - `SemanticRecallPort`
-  - `CanonicalStatePort`
-  - `TemporalReplayPort`
-  - `MemoryFederationPort`
-- [ ] Aphelion adapter 實作 `SemanticRecallPort`（包 a2a ChromaDB 呼叫）
-- [ ] Parallax 內部實作 `CanonicalStatePort` + `TemporalReplayPort`
+- [ ] `parallax/router/ports.py` 定義四個 `@runtime_checkable` Protocol：
+  - `QueryPort`    — `query(QueryRequest) -> RetrievalEvidence`
+  - `IngestPort`   — `ingest(IngestRequest) -> IngestResult`
+  - `InspectPort`  — `health() -> HealthReport`
+  - `BackfillPort` — `backfill(BackfillRequest) -> BackfillReport`
+- [ ] `MockMemoryRouter`（Lane D-1）+ `RealMemoryRouter`（Lane D-2）各自實作四個 port
+- [ ] Aphelion / Parallax backend-specific dispatch 在 Lane D-3 routing policy 決定
 - [ ] 單元測試：每個 port 有 mock 可換
 
 ### US-004: Response Envelope
@@ -113,11 +130,11 @@ HYBRID_SEMANTIC_CONSTRAINED:
 - [ ] 所有 router 出口都用這個 envelope
 - [ ] 測試：envelope schema 驗證
 
-### US-005: Hybrid executor
-- [ ] 實作 `HYBRID_SEMANTIC_CONSTRAINED` 的 staged composition
+### US-005: Hybrid executor（Lane D-3 scope）
+- [ ] 實作 semantic-constrained hybrid composer（對 applicable `QueryType` 觸發，見 §2.3）— 非新 enum 值
 - [ ] candidate → hydrate → filter → render 四階段
 - [ ] 缺 crosswalk 時標 `ambiguous`，不自動去重
-- [ ] 整合測試：real-ish flow with MockProvider + in-memory Aphelion stub
+- [ ] 整合測試：real-ish flow with MockProvider + in-memory semantic recall stub
 
 ### US-006: Conflict detection + event log
 - [ ] `parallax/router/conflict.py`：跨域事實不一致偵測
@@ -126,7 +143,7 @@ HYBRID_SEMANTIC_CONSTRAINED:
 - [ ] 測試：產生衝突 → 確認 event 寫入 + envelope flag
 
 ### US-007: Reconciliation mode（離線）
-- [ ] `MemoryFederationPort.reconcile(mode="nightly" | "on_demand")`
+- [ ] Reconciliation 能力（Lane D-3 scope）— Lane D-1 contract freeze 未納入，實作入口待 routing layer 定義（候選：獨立 port 或 `BackfillPort` 的 mode）
 - [ ] 產出 diff report（兩邊都有 vs 只有一邊 vs 衝突）
 - [ ] CLI: `parallax reconcile --since=...`
 - [ ] 測試：已知 diff 能被偵測
@@ -138,7 +155,7 @@ HYBRID_SEMANTIC_CONSTRAINED:
 
 ### US-009: a2a 端整合（讀路由）
 - [ ] a2a 端加 `MEMORY_ROUTER=parallax` feature flag
-- [ ] flag on：讀取走 `MemoryQueryRouter`；flag off：走原 Aphelion 路徑
+- [ ] flag on：讀取走 `RealMemoryRouter`；flag off：走原 Aphelion 路徑
 - [ ] 7-day canary：flag 預設 off，金絲雀 user 先開
 - [ ] 寫入仍維持 `PARALLAX_DUAL_WRITE=1` 雙寫
 
