@@ -82,3 +82,60 @@ def dump_via_memories(conn: sqlite3.Connection, user_id: str) -> str:
     rows = memories_by_user(conn, user_id)
     rows_sorted = sorted(rows, key=lambda r: r["vault_path"])
     return "\n".join(f"{r['title']}\n{r['summary']}" for r in rows_sorted)
+
+
+def build_from_parallax_retrieval(
+    conn: sqlite3.Connection,
+    q: Question,
+    *,
+    top_k: int = 64,
+    max_chars: int = 40000,
+) -> str:
+    """Retrieval-filtered transcript — reads from Parallax store, not from ``q``.
+
+    The v1 pipeline built the answer prompt from ``dump_all_sessions(q)``,
+    which walks the in-memory Question tuple and therefore never exercises the
+    Parallax store we just ingested into. That bypass hid any breakage in the
+    ingest/retrieve round-trip behind a 1M-ctx answer model.
+
+    This helper closes the loop:
+
+    1. Fetch every ingested memory row via ``memories_by_user(conn, ...)``.
+    2. Score each row by lexical overlap with ``q.question`` (BM25-stub — no
+       model dependency, deterministic, fast).
+    3. Keep the top ``top_k`` rows, stop early once ``max_chars`` is reached.
+    4. Emit a chronological transcript ordered by ``vault_path`` so temporal
+       questions keep the user's original arrival order.
+
+    The defaults are generous (64 rows / 40K chars) so short haystacks pass
+    through unfiltered; narrow them to actually exercise retrieval pressure.
+    """
+    user_id = q.question_id
+    rows = memories_by_user(conn, user_id)
+    if not rows:
+        return ""
+
+    q_tokens = {t.lower() for t in q.question.split() if t}
+
+    def _score(row: dict) -> float:
+        blob = f"{row.get('title') or ''} {row.get('summary') or ''}"
+        tokens = {t.lower() for t in blob.split() if t}
+        return len(q_tokens & tokens) / max(1, len(q_tokens))
+
+    scored: list[tuple[float, dict]] = [(_score(r), r) for r in rows]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    kept = [r for _, r in scored[:top_k]]
+
+    # Restore chronological order for the emitted transcript — relevance is used
+    # only to choose which rows survive the top_k + char budget.
+    kept.sort(key=lambda r: r.get("vault_path") or "")
+
+    lines: list[str] = []
+    total = 0
+    for r in kept:
+        block = f"{r['title']}\n{r['summary']}"
+        if total + len(block) > max_chars and lines:
+            break
+        lines.append(block)
+        total += len(block)
+    return "\n\n".join(lines)

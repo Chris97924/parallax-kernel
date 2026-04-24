@@ -21,7 +21,12 @@ from dataclasses import dataclass
 
 from eval.longmemeval.dataset import Question
 from eval.longmemeval.gemini import GeminiResult, call
-from eval.longmemeval.store import dump_all_sessions, ephemeral_store, ingest_question
+from eval.longmemeval.store import (
+    build_from_parallax_retrieval,
+    dump_all_sessions,
+    ephemeral_store,
+    ingest_question,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +103,25 @@ def run_one(
     answer_model: str,
     judge_model: str,
     max_output_tokens: int = 512,
+    use_retrieval: bool = False,
 ) -> AnswerRecord:
-    """Run the full pipeline for a single question. Exceptions become ERROR."""
+    """Run the full pipeline for a single question. Exceptions become ERROR.
+
+    When ``use_retrieval`` is False (default, preserves v1 long-context
+    behavior), the answer prompt is built from ``dump_all_sessions(q)`` —
+    walking the Question tuple directly. When True, the prompt is built by
+    ``build_from_parallax_retrieval(conn, q)``, which reads back through the
+    Parallax store we just ingested into. The retrieval path is opt-in so
+    existing Run B baselines stay reproducible.
+    """
     try:
         with ephemeral_store() as conn:
             turns = ingest_question(conn, q)
-            transcript = dump_all_sessions(q)
+            transcript = (
+                build_from_parallax_retrieval(conn, q)
+                if use_retrieval
+                else dump_all_sessions(q)
+            )
     except Exception as exc:  # noqa: BLE001
         logger.exception("ingest failed for %s", q.question_id)
         return _err_record(q, answer_model, judge_model, str(exc), stage="ingest")
