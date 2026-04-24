@@ -25,6 +25,7 @@ Once an ADR reaches `Accepted`, the file is treated as append-only. Changing the
 | [ADR-004](ADR-004-claim-dedup-includes-source-id.md) | Accepted | `claims.content_hash` includes `source_id`; identical triple under different sources is two rows by design. Cross-source corroboration is an explicit future operation, not a silent collapse. |
 | [ADR-005](ADR-005-claim-content-hash-user-id-scope.md) | Accepted | `claims.content_hash` also scopes to `user_id` (5-part formula, supersedes ADR-004's 4-part formula). Two users sharing one source each own their own claim rows; the UNIQUE index becomes `(content_hash, source_id, user_id)`. |
 | [ADR-006](ADR-006-retrieval-filtered-pipeline.md) | Proposed | Retrieval-filtered answerer pipeline: six-intent closed set with deterministic priority, two-layer router (rule ≥ 0.80 / Flash ≥ 0.70), MMR fallback floor (`fallback_e2e ≥ 0.95 × baseline` CI gate), evidence-only answerer with `insufficient_evidence` abstain token, and a frozen six-number A/B evaluation tuple. |
+| [ADR-007](ADR-007-change-trace-bug-kind-dispatch.md) | Accepted | `CHANGE_TRACE` dispatches `by_decision` vs `by_bug_fix` via `QueryRequest.params.legacy_kind` — preserves Lane D-1 5-value `QueryType` freeze; LongMemEval bug-subset guardrail (−2pp max) gates `MEMORY_ROUTER=true` default-on. |
 
 ## Numbering
 

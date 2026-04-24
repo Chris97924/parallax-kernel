@@ -224,6 +224,83 @@ class TestQueryDispatch:
         assert resp.status_code == 422
 
 
+class TestQueryRouterFlag:
+    def test_entity_uses_memory_router_when_enabled(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MEMORY_ROUTER", "true")
+        client.post(
+            "/ingest/claim",
+            json={
+                "user_id": "u",
+                "subject": "router-entity",
+                "predicate": "is",
+                "object": "active",
+            },
+        )
+        resp = client.get(
+            "/query",
+            params={
+                "kind": "entity",
+                "user_id": "u",
+                "q": "router-entity",
+                "level": 2,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["count"] >= 1
+        assert body["hits"][0]["explain"]["reason"] == "memory_router_dispatch"
+
+    def test_router_preserves_score_and_l3_full_contract(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        subject = "router-contract-subject"
+        client.post(
+            "/ingest/claim",
+            json={
+                "user_id": "u",
+                "subject": subject,
+                "predicate": "is",
+                "object": "contract-check",
+            },
+        )
+
+        monkeypatch.setenv("MEMORY_ROUTER", "false")
+        resp_off = client.get(
+            "/query",
+            params={
+                "kind": "entity",
+                "user_id": "u",
+                "q": subject,
+                "level": 3,
+                "limit": 1,
+            },
+        )
+        assert resp_off.status_code == 200, resp_off.text
+        hit_off = resp_off.json()["hits"][0]
+        assert hit_off["score"] > 0.0
+        assert isinstance(hit_off["full"], dict)
+
+        monkeypatch.setenv("MEMORY_ROUTER", "true")
+        resp_on = client.get(
+            "/query",
+            params={
+                "kind": "entity",
+                "user_id": "u",
+                "q": subject,
+                "level": 3,
+                "limit": 1,
+            },
+        )
+        assert resp_on.status_code == 200, resp_on.text
+        hit_on = resp_on.json()["hits"][0]
+        assert hit_on["score"] > 0.0
+        assert hit_on["score"] == pytest.approx(hit_off["score"])
+        assert isinstance(hit_on["full"], dict)
+        assert set(hit_on["full"].keys()) == set(hit_off["full"].keys())
+
+
 # ----- /query/reminder ------------------------------------------------------
 
 
