@@ -11,12 +11,21 @@ SessionStart hook plugin consumes.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from parallax import retrieve as R
 from parallax.injector import build_session_reminder
+from parallax.router import (
+    QueryRequest as RouterQueryRequest,
+)
+from parallax.router import (
+    RealMemoryRouter,
+    UnroutableQueryError,
+    is_router_enabled,
+    resolve,
+)
 from parallax.server.auth import current_user_id, require_auth
 from parallax.server.deps import get_conn
 from parallax.server.schemas import (
@@ -62,6 +71,75 @@ def _normalize_full(full: Any) -> dict[str, Any] | str | None:
     return str(full)
 
 
+def _router_hit_to_dto(hit: dict[str, Any], *, level: int, query_type: str) -> RetrievalHitDTO:
+    """Convert router RetrievalEvidence hit dict into API DTO shape."""
+    entity_kind = str(hit.get("kind", "unknown"))
+    entity_id = str(hit.get("id", ""))
+    title = str(hit.get("text", ""))
+    evidence = hit.get("evidence") if level >= 2 else None
+    full = _normalize_full(hit.get("full")) if level >= 3 else None
+    upstream_explain = hit.get("explain")
+    explain: dict[str, Any] = {
+        "reason": "memory_router_dispatch",
+        "score_components": {"router": 1.0},
+        "query_type": query_type,
+    }
+    if isinstance(upstream_explain, dict):
+        explain["upstream"] = upstream_explain
+
+    return RetrievalHitDTO(
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        title=title,
+        score=float(hit.get("score", 0.0) or 0.0),
+        level=level,  # type: ignore[arg-type]
+        evidence=evidence,
+        full=full,
+        explain=explain,
+    )
+
+
+def _dispatch_with_router(
+    conn: sqlite3.Connection,
+    *,
+    kind: RetrieveKind,
+    user_id: str,
+    q: str,
+    level: int,
+    limit: int,
+    since: str | None,
+    until: str | None,
+) -> list[RetrievalHitDTO]:
+    try:
+        query_type = resolve(f"RetrieveKind.{kind}")
+    except UnroutableQueryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    request = RouterQueryRequest(
+        query_type=query_type,
+        user_id=user_id,
+        q=q,
+        limit=limit,
+        since=since,
+        until=until,
+        level=level,
+    )
+    mem_router = RealMemoryRouter(conn)
+    try:
+        evidence = mem_router.query(request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    return [
+        _router_hit_to_dto(hit, level=level, query_type=query_type.value)
+        for hit in evidence.hits
+    ]
+
+
 def _dispatch(
     conn: sqlite3.Connection,
     *,
@@ -101,40 +179,56 @@ def _dispatch(
 @router.get("", response_model=QueryResponse)
 def get_query(
     request: Request,
-    kind: RetrieveKind = Query(..., description=f"one of {list(RETRIEVE_KINDS)}"),
-    user_id: str | None = Query(None, min_length=1, max_length=128),
-    q: str = Query("", description="path / subject for file / entity kinds"),
-    level: int = Query(1, ge=1, le=3, description="progressive disclosure tier"),
-    limit: int = Query(10, ge=1, le=200),
-    since: str | None = Query(None, description="ISO-8601 lower bound (timeline)"),
-    until: str | None = Query(None, description="ISO-8601 upper bound (timeline)"),
-    conn: sqlite3.Connection = Depends(get_conn),
+    kind: Annotated[RetrieveKind, Query(description=f"one of {list(RETRIEVE_KINDS)}")],
+    conn: Annotated[sqlite3.Connection, Depends(get_conn)],
+    user_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    q: Annotated[str, Query(description="path / subject for file / entity kinds")] = "",
+    level: Annotated[int, Query(ge=1, le=3, description="progressive disclosure tier")] = 1,
+    limit: Annotated[int, Query(ge=1, le=200)] = 10,
+    since: Annotated[
+        str | None, Query(description="ISO-8601 lower bound (timeline)")
+    ] = None,
+    until: Annotated[
+        str | None, Query(description="ISO-8601 upper bound (timeline)")
+    ] = None,
 ) -> QueryResponse:
     # Multi-user mode: the authenticated principal on request.state.user_id
     # overrides any query-string ``user_id`` (which is logged as a leak
     # attempt if it disagrees). Single-token mode: the query-string value
     # is required, same as before.
     resolved_user_id = current_user_id(request, user_id)
-    hits = _dispatch(
-        conn,
-        kind=kind,
-        user_id=resolved_user_id,
-        q=q,
-        limit=limit,
-        since=since,
-        until=until,
-    )
-    dtos = [_hit_to_dto(h, level=level) for h in hits]
+    if is_router_enabled():
+        dtos = _dispatch_with_router(
+            conn,
+            kind=kind,
+            user_id=resolved_user_id,
+            q=q,
+            level=level,
+            limit=limit,
+            since=since,
+            until=until,
+        )
+    else:
+        hits = _dispatch(
+            conn,
+            kind=kind,
+            user_id=resolved_user_id,
+            q=q,
+            limit=limit,
+            since=since,
+            until=until,
+        )
+        dtos = [_hit_to_dto(h, level=level) for h in hits]
     return QueryResponse(kind=kind, level=level, count=len(dtos), hits=dtos)
 
 
 @router.get("/reminder", response_model=ReminderResponse)
 def get_reminder(
     request: Request,
-    user_id: str | None = Query(None, min_length=1, max_length=128),
-    session_id: str | None = Query(None),
-    max_hits: int = Query(8, ge=1, le=32),
-    conn: sqlite3.Connection = Depends(get_conn),
+    conn: Annotated[sqlite3.Connection, Depends(get_conn)],
+    user_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    session_id: Annotated[str | None, Query()] = None,
+    max_hits: Annotated[int, Query(ge=1, le=32)] = 8,
 ) -> ReminderResponse:
     resolved_user_id = current_user_id(request, user_id)
     text = build_session_reminder(

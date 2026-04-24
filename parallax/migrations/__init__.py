@@ -43,6 +43,7 @@ from parallax.migrations import (
     m0008_normalize_naive_created_at,
     m0009_api_tokens,
     m0010_memory_cards,
+    m0011_crosswalk,
 )
 from parallax.sqlite_store import now_iso
 
@@ -128,6 +129,12 @@ MIGRATIONS: list[Migration] = [
         name="memory_cards",
         up=m0010_memory_cards.up,
         down=m0010_memory_cards.down,
+    ),
+    Migration(
+        version=11,
+        name="crosswalk",
+        up=m0011_crosswalk.up,
+        down=m0011_crosswalk.down,
     ),
 ]
 
@@ -234,6 +241,7 @@ _MIGRATION_MODULES: dict[int, object] = {
     8: m0008_normalize_naive_created_at,
     9: m0009_api_tokens,
     10: m0010_memory_cards,
+    11: m0011_crosswalk,
 }
 
 # Matches table identifiers following the DDL/DML keywords we care about.

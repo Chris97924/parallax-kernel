@@ -1,4 +1,4 @@
-"""Migration 0010 — memory_cards table for DPKG Lane C Phase 1.
+"""Migration 0010 — memory_cards table for Aphelion Lane C Phase 1.
 
 Adds the ``memory_cards`` table + ``idx_memory_cards_user_filename`` unique
 index. Each row represents one parsed card from a user's MEMORY.md file.
