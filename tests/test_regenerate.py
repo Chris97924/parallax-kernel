@@ -22,14 +22,21 @@ import pytest
 # Module loader
 # ---------------------------------------------------------------------------
 
-_SCRIPT_PATH = Path("C:/Users/user/.claude/scripts/parallax_memory/regenerate.py")
+_DEFAULT_SCRIPT_PATH = Path("C:/Users/user/.claude/scripts/parallax_memory/regenerate.py")
+_SCRIPT_PATH = Path(os.environ.get("PARALLAX_REGEN_SCRIPT_PATH", str(_DEFAULT_SCRIPT_PATH)))
 
 if not _SCRIPT_PATH.is_file():
-    pytest.skip(
-        f"regenerate.py hook script not present at {_SCRIPT_PATH}; "
-        "these tests target a developer-local Claude Code hook outside the repo.",
-        allow_module_level=True,
-    )
+    if "PARALLAX_REGEN_SCRIPT_PATH" in os.environ:
+        _skip_reason = (
+            f"PARALLAX_REGEN_SCRIPT_PATH={_SCRIPT_PATH} is not a file; "
+            "point it at your local regenerate.py (Claude Code SessionStart hook)."
+        )
+    else:
+        _skip_reason = (
+            f"regenerate.py hook script not found at default {_DEFAULT_SCRIPT_PATH}; "
+            "set PARALLAX_REGEN_SCRIPT_PATH to your local path to enable these tests."
+        )
+    pytest.skip(_skip_reason, allow_module_level=True)
 
 
 def _load_mod():
