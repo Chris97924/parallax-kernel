@@ -103,7 +103,7 @@ semantic-constrained hybrid composer:
 ### US-002: QueryType enum + Router
 - [ ] `parallax/router/types.py` 定義 `QueryType` enum（5-value closed set）
 - [ ] `parallax/router/__init__.py` 暴露 `MockMemoryRouter`（Lane D-1）+ `RealMemoryRouter`（Lane D-2）
-- [ ] Router 拒絕沒有 `query_type` 的請求（`UnroutableQueryError`，不做自動分類）
+- [ ] `QueryRequest` 以 frozen dataclass 保證 `query_type` 必填（漏傳則 construction 階段 `TypeError`）；router layer 不做自動分類 heuristic
 - [ ] 單元測試：每個 QueryType 路由正確（實作在 Lane D-3）
 
 ### US-003: Capability Ports
