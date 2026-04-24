@@ -24,6 +24,13 @@ import pytest
 
 _SCRIPT_PATH = Path("C:/Users/user/.claude/scripts/parallax_memory/regenerate.py")
 
+if not _SCRIPT_PATH.is_file():
+    pytest.skip(
+        f"regenerate.py hook script not present at {_SCRIPT_PATH}; "
+        "these tests target a developer-local Claude Code hook outside the repo.",
+        allow_module_level=True,
+    )
+
 
 def _load_mod():
     spec = importlib.util.spec_from_file_location("regenerate", _SCRIPT_PATH)
