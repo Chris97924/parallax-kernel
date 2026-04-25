@@ -9,7 +9,9 @@ from __future__ import annotations
 import sqlite3
 import types
 from collections.abc import Mapping
+from typing import Final
 
+from parallax.obs.log import get_logger
 from parallax.retrieval.contracts import RetrievalEvidence
 from parallax.router.contracts import (
     BackfillReport,
@@ -21,6 +23,8 @@ from parallax.router.contracts import (
 )
 from parallax.router.crosswalk_seed import seed_hash
 from parallax.router.types import QueryType
+
+_log = get_logger("parallax.router.real_adapter")
 
 __all__ = [
     "RealMemoryRouter",
@@ -45,7 +49,7 @@ _DISPATCH: dict[QueryType, str] = {
 # concern is addressed by routing both ingest-side normalization (this module)
 # and read-side DTO body projection through the same _first_non_empty helper
 # in parallax.router.normalize — single source of truth.
-MEMORY_BODY_KEYS: tuple[str, ...] = (
+MEMORY_BODY_KEYS: Final[tuple[str, ...]] = (
     "body",
     "object_",
     "object",
@@ -54,8 +58,8 @@ MEMORY_BODY_KEYS: tuple[str, ...] = (
     "summary",
     "description",
 )
-MEMORY_TITLE_KEYS: tuple[str, ...] = ("title", "name")
-CLAIM_OBJECT_KEYS: tuple[str, ...] = (
+MEMORY_TITLE_KEYS: Final[tuple[str, ...]] = ("title", "name")
+CLAIM_OBJECT_KEYS: Final[tuple[str, ...]] = (
     "object_",
     "object",
     "body",
@@ -63,8 +67,8 @@ CLAIM_OBJECT_KEYS: tuple[str, ...] = (
     "text",
     "summary",
 )
-CLAIM_SUBJECT_KEYS: tuple[str, ...] = ("subject", "entity", "name")
-CLAIM_PREDICATE_KEYS: tuple[str, ...] = ("predicate", "event_type")
+CLAIM_SUBJECT_KEYS: Final[tuple[str, ...]] = ("subject", "entity", "name")
+CLAIM_PREDICATE_KEYS: Final[tuple[str, ...]] = ("predicate", "event_type")
 
 
 def _derive_body(hit: object) -> str:
@@ -78,7 +82,10 @@ def _derive_body(hit: object) -> str:
     or malformed values, but a query that returned hits already passed
     persistence; falling back to the hit's title preserves consumer
     contract (``body`` is always a ``str``) without aborting the whole
-    response if a single legacy row lacks a recognized body alias.
+    response if a single legacy row lacks a recognized body alias. Any
+    ValueError encountered during alias resolution is logged at WARNING so
+    operators can distinguish "legacy row without recognized alias" from
+    "row whose persisted value is malformed (type mismatch / surrogate)".
     """
     from parallax.router.normalize import _first_non_empty
 
@@ -90,13 +97,28 @@ def _derive_body(hit: object) -> str:
     else:
         return getattr(hit, "title", None) or ""
 
-    for source in (getattr(hit, "full", None), getattr(hit, "evidence", None)):
+    fallback_reasons: list[str] = []
+    for source_name, source in (
+        ("full", getattr(hit, "full", None)),
+        ("evidence", getattr(hit, "evidence", None)),
+    ):
         if not source:
             continue
         try:
             return _first_non_empty(source, keys, field=f"{kind}.body")
-        except ValueError:
-            continue
+        except ValueError as exc:
+            fallback_reasons.append(f"{source_name}: {exc}")
+
+    if fallback_reasons:
+        _log.warning(
+            "_derive_body fallback",
+            extra={
+                "event": "derive_body_fallback",
+                "kind": kind,
+                "entity_id": getattr(hit, "entity_id", None),
+                "reasons": fallback_reasons,
+            },
+        )
     return getattr(hit, "title", None) or ""
 
 
@@ -232,12 +254,10 @@ class RealMemoryRouter:
         if request.kind == "memory":
             body = _first_non_empty(payload, MEMORY_BODY_KEYS, field="memory.body")
             vault_path = _first_non_empty(payload, ("vault_path",), field="memory.vault_path")
-            # Title is optional in the underlying schema; absence is OK.
-            title: str | None
-            try:
-                title = _first_non_empty(payload, MEMORY_TITLE_KEYS, field="memory.title")
-            except ValueError:
-                title = None
+            # Title is optional in the underlying schema. ``default=None``
+            # makes "no recognized alias present" return None, but type and
+            # surrogate errors still propagate (Codex review HIGH-4).
+            title = _first_non_empty(payload, MEMORY_TITLE_KEYS, field="memory.title", default=None)
             persisted_id, deduped = ingest_memory_with_status(
                 self._conn,
                 user_id=request.user_id,

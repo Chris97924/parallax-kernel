@@ -102,7 +102,9 @@ def test_backfill_index_selectivity_user_state(conn: sqlite3.Connection) -> None
         "EXPLAIN QUERY PLAN " "SELECT canonical_ref FROM crosswalk WHERE user_id = ? AND state = ?",
         (_USER, "mapped"),
     ).fetchall()
-    plan_text = " ".join(str(row[3]) for row in plan_rows)
+    # row["detail"] (Row factory set in connect()) is more robust than row[3]
+    # across SQLite versions (db-expert LOW-2 fix).
+    plan_text = " ".join(str(row["detail"]) for row in plan_rows)
     assert (
         "idx_crosswalk_user_state" in plan_text
     ), f"Expected idx_crosswalk_user_state in plan, got: {plan_text}"

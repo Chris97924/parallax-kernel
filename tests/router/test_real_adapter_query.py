@@ -168,6 +168,45 @@ def test_dto_body_field_resolves_from_alias_for_claim(
         assert hit["body"], f"claim body should resolve from object/object_ alias; got hit={hit}"
 
 
+def test_derive_body_fallback_emits_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HIGH-3 fix: when _derive_body falls back due to alias resolution
+    failure, emit a structured WARNING so operators can spot post-ingest
+    data corruption (a row whose persisted fields contain unexpected
+    types or surrogate chars) rather than silently coercing to title.
+
+    The project's parallax.obs.log JSON logger sets ``propagate=False`` so
+    caplog (which hooks the root logger) cannot capture these records.
+    Patch the module-level ``_log`` instead and assert on the call.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    bad_hit = SimpleNamespace(
+        entity_kind="memory",
+        entity_id="m-bad-1",
+        title="fallback-title",
+        full={"body": 0},  # type error → ValueError → fallback path
+        evidence=None,
+    )
+    result = adapter_mod._derive_body(bad_hit)
+    assert result == "fallback-title"
+
+    fake_log.warning.assert_called_once()
+    args, kwargs = fake_log.warning.call_args
+    assert args[0] == "_derive_body fallback"
+    extra = kwargs.get("extra", {})
+    assert extra.get("kind") == "memory"
+    assert extra.get("entity_id") == "m-bad-1"
+    assert extra.get("event") == "derive_body_fallback"
+    reasons = extra.get("reasons") or []
+    assert any("non-str" in r for r in reasons)
+
+
 def test_recent_context_dispatch(seeded_conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(seeded_conn)
     req = QueryRequest(query_type=QueryType.RECENT_CONTEXT, user_id=_USER, q="")

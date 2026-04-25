@@ -94,9 +94,14 @@ def test_first_non_empty_rejects_bool_at_first_key() -> None:
 # --- _first_non_empty: Unicode validation ----------------------------------
 
 
-def test_first_non_empty_rejects_lone_surrogate() -> None:
-    """Lone UTF-16 surrogate (U+D800) raises ValueError at normalize boundary."""
-    payload = {"body": "hello\ud800world"}
+@pytest.mark.parametrize(
+    "surrogate",
+    ["\ud800", "\udbff", "\udc00", "\udfff"],
+    ids=["high-low-D800", "high-high-DBFF", "low-low-DC00", "low-high-DFFF"],
+)
+def test_first_non_empty_rejects_lone_surrogate(surrogate: str) -> None:
+    """All four corner unpaired surrogate codepoints raise ValueError."""
+    payload = {"body": f"hello{surrogate}world"}
     with pytest.raises(ValueError, match=r"surrogate"):
         _first_non_empty(payload, ("body",), field="memory.body")
 
@@ -160,3 +165,80 @@ def test_coerce_optional_float_rejects_bool(bad: bool) -> None:
 def test_coerce_optional_float_rejects_other_types(bad: object) -> None:
     with pytest.raises(ValueError, match=r"expected float"):
         _coerce_optional_float(bad, field="claim.confidence")
+
+
+# --- HIGH-1: NaN / inf rejection -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "non_finite",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "+inf", "-inf"],
+)
+def test_coerce_optional_float_rejects_non_finite(non_finite: float) -> None:
+    """NaN, +inf, -inf must raise — confidence-like fields cannot store these."""
+    with pytest.raises(ValueError, match=r"non-finite"):
+        _coerce_optional_float(non_finite, field="claim.confidence")
+
+
+# --- HIGH-2: custom __eq__ bypass guard ------------------------------------
+
+
+def test_first_non_empty_rejects_eq_empty_object() -> None:
+    """An object whose __eq__ returns True for '' must NOT silently fall through.
+
+    Before the fix, ``value == ""`` was evaluated via the value's ``__eq__``,
+    so a class returning ``True`` for ``== ""`` skipped the type-rejection
+    branch and the loop fell through to the next alias. The fix is to check
+    ``isinstance(value, str)`` before treating ``""`` as missing.
+    """
+
+    class TrueEq:
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __hash__(self) -> int:
+            return 0
+
+    payload = {"body": TrueEq()}
+    with pytest.raises(ValueError, match=r"non-str"):
+        _first_non_empty(payload, ("body",), field="memory.body")
+
+
+# --- New: optional default parameter (HIGH-4 enabler) ----------------------
+
+
+def test_first_non_empty_default_returns_on_missing() -> None:
+    """default param: returns the default when no key resolves (no exception)."""
+    payload: dict[str, str] = {}
+    result = _first_non_empty(payload, ("title", "name"), field="memory.title", default=None)
+    assert result is None
+
+
+def test_first_non_empty_default_returns_on_all_none_or_empty() -> None:
+    """default param: all keys present but None/'' → returns default, no raise."""
+    payload = {"title": None, "name": ""}
+    result = _first_non_empty(payload, ("title", "name"), field="memory.title", default=None)
+    assert result is None
+
+
+def test_first_non_empty_default_does_not_swallow_type_error() -> None:
+    """default param is for missing-only — type errors must still propagate."""
+    payload = {"title": 0}
+    with pytest.raises(ValueError, match=r"non-str"):
+        _first_non_empty(payload, ("title", "name"), field="memory.title", default=None)
+
+
+def test_first_non_empty_default_does_not_swallow_lone_surrogate() -> None:
+    """default param is for missing-only — surrogate errors must still propagate."""
+    payload = {"title": "ok\ud800broken"}
+    with pytest.raises(ValueError, match=r"surrogate"):
+        _first_non_empty(payload, ("title", "name"), field="memory.title", default=None)
+
+
+def test_first_non_empty_default_returns_value_on_hit() -> None:
+    """default is only used when no alias resolves; otherwise behavior unchanged."""
+    payload = {"title": "real"}
+    assert (
+        _first_non_empty(payload, ("title", "name"), field="memory.title", default=None) == "real"
+    )

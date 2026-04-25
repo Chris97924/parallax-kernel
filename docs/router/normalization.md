@@ -74,15 +74,30 @@ built-in keyword); the SQLite column is `object`. The router accepts both.
 |-------------|----------|
 | First key absent | Skip; try next. |
 | First key value is `None` | Treat as missing; try next. |
-| First key value is `""` | Treat as missing; try next. |
+| First key value is non-`str` | `ValueError` — no silent `str()` coercion (the type check runs **before** the empty-string check, so a value with a custom `__eq__` that returns `True` for `""` cannot bypass type rejection). |
+| First key value is `""` (a real `str`) | Treat as missing; try next. |
 | First key value is non-empty `str` | Return it. |
-| First key value is `int` / `float` / `bool` / `bytes` / `dict` / `list` / `tuple` | `ValueError` — no silent `str()` coercion. |
-| First key value is `str` containing an unpaired UTF-16 surrogate (`U+D800`–`U+DFFF` not part of a pair) | `ValueError` — caught at normalize boundary, before SQLite encode. |
-| All keys exhausted | `ValueError` listing the alias tuple so the caller sees what was tried. |
+| First key value is `str` with an unpaired UTF-16 surrogate (`U+D800`–`U+DFFF`) | `ValueError` — caught at normalize boundary, before SQLite encode. |
+| All keys exhausted, `default` unset | `ValueError` listing the alias tuple so the caller sees what was tried. |
+| All keys exhausted, `default` supplied | Return `default`. |
 
 Numeric `0`, the empty `dict`, the empty `list`, `False`, and `True` all
 raise. The intent is to fail fast on caller bugs (passing the wrong kind of
 value) rather than producing surprising rows.
+
+### `default` parameter (optional fields)
+
+`_first_non_empty(payload, keys, *, field, default=...)` accepts an optional
+`default` value. The default applies **only** when no key resolves; type and
+surrogate errors still propagate. Use this for genuinely optional fields
+(memory `title` — no alias present is fine, but `title=0` is still a bug):
+
+```python
+title = _first_non_empty(
+    payload, MEMORY_TITLE_KEYS, field="memory.title", default=None
+)
+# title is str | None — None means "no alias present", malformed values raise
+```
 
 ## `_coerce_optional_float` semantics
 
@@ -92,6 +107,7 @@ value) rather than producing surprising rows.
 | `int` (not `bool`) | `float(value)` |
 | `float` | `value` |
 | `bool` | `ValueError` (explicit reject — `bool` is `int` subclass; silent coercion masks bugs) |
+| `NaN` / `+inf` / `-inf` | `ValueError` (non-finite floats cannot meaningfully store as confidence; silent persistence masks data bugs) |
 | any other type | `ValueError` |
 
 Used by `RealMemoryRouter.ingest` for `IngestRequest.payload['confidence']`
@@ -123,11 +139,15 @@ falls back to the hit's `title` (or `""` if the title is also missing).
 
 ### Read-side leniency vs ingest strictness
 
-Ingest raises on type errors. Read-side does NOT. Reasoning: a hit that
-came back from a query already passed persistence (the ingest boundary has
-already validated). If a legacy row predates the alias rules and lacks any
-recognized body alias, returning `body=""` keeps the consumer contract
-("`body` is always a `str`") rather than aborting the whole response.
+Ingest raises on type errors. Read-side does NOT — but it **logs a
+WARNING** when the alias resolution fails on the source payload, so
+operators can distinguish "legacy row without recognized alias" from
+"row whose persisted value is malformed (type mismatch / surrogate)".
+A hit that came back from a query already passed persistence; falling
+back to the hit's title preserves the consumer contract (`body` is
+always a `str`) without aborting the whole response, while the WARNING
+log surfaces the underlying issue. Look for log entries with
+`event=derive_body_fallback` to triage suspect rows.
 
 ## Flag-off behavior
 

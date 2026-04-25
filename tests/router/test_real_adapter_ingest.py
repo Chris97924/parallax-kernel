@@ -136,6 +136,49 @@ def test_ingest_memory_missing_vault_path_raises(conn: sqlite3.Connection) -> No
     assert "vault_path" in str(exc.value)
 
 
+# --- HIGH-4 (Codex finding): title alias errors must propagate, not silently None
+
+
+def test_ingest_memory_invalid_title_type_propagates(conn: sqlite3.Connection) -> None:
+    """title=0 is a type error — must raise, not silently store NULL title."""
+    router = RealMemoryRouter(conn)
+    payload = {"body": "ok", "vault_path": "v.md", "title": 0}
+    with pytest.raises(ValueError, match=r"non-str"):
+        router.ingest(IngestRequest(user_id=_USER, kind="memory", payload=payload))
+
+
+def test_ingest_memory_lone_surrogate_in_title_propagates(conn: sqlite3.Connection) -> None:
+    """title with lone surrogate — must raise, not silently store NULL title."""
+    router = RealMemoryRouter(conn)
+    payload = {"body": "ok", "vault_path": "v.md", "title": "bad\ud800title"}
+    with pytest.raises(ValueError, match=r"surrogate"):
+        router.ingest(IngestRequest(user_id=_USER, kind="memory", payload=payload))
+
+
+def test_ingest_memory_missing_title_stores_null(conn: sqlite3.Connection) -> None:
+    """No title alias at all → NULL title persisted (the only acceptable fallback)."""
+    router = RealMemoryRouter(conn)
+    payload = {"body": "no title here", "vault_path": "v.md"}
+    result = router.ingest(IngestRequest(user_id=_USER, kind="memory", payload=payload))
+    row = conn.execute(
+        "SELECT title FROM memories WHERE memory_id = ?",
+        (result.identifier,),
+    ).fetchone()
+    assert row["title"] is None
+
+
+def test_ingest_memory_title_alias_name_resolves(conn: sqlite3.Connection) -> None:
+    """`name` alias falls through to title when `title` absent."""
+    router = RealMemoryRouter(conn)
+    payload = {"body": "x", "vault_path": "v.md", "name": "named"}
+    result = router.ingest(IngestRequest(user_id=_USER, kind="memory", payload=payload))
+    row = conn.execute(
+        "SELECT title FROM memories WHERE memory_id = ?",
+        (result.identifier,),
+    ).fetchone()
+    assert row["title"] == "named"
+
+
 # --- Claim ingest happy paths ---------------------------------------------
 
 
