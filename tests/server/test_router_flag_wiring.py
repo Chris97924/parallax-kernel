@@ -318,17 +318,10 @@ class TestHealthMultiUserRedaction:
 
     def test_no_bearer_returns_ok_only(
         self,
-        tmp_path: pathlib.Path,
+        mu_db_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from parallax.migrations import migrate_to_latest
-        from parallax.sqlite_store import connect as _connect
-
-        p = tmp_path / "mu1.db"
-        c = _connect(p)
-        migrate_to_latest(c)
-        c.close()
-        app = self._make_app(p, monkeypatch)
+        app = self._make_app(mu_db_path, monkeypatch)
         with TestClient(app) as cl:
             resp = cl.get("/inspect/health")
         assert resp.status_code == 200
@@ -337,17 +330,10 @@ class TestHealthMultiUserRedaction:
 
     def test_invalid_bearer_returns_ok_only(
         self,
-        tmp_path: pathlib.Path,
+        mu_db_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from parallax.migrations import migrate_to_latest
-        from parallax.sqlite_store import connect as _connect
-
-        p = tmp_path / "mu2.db"
-        c = _connect(p)
-        migrate_to_latest(c)
-        c.close()
-        app = self._make_app(p, monkeypatch)
+        app = self._make_app(mu_db_path, monkeypatch)
         with TestClient(app) as cl:
             resp = cl.get(
                 "/inspect/health",
@@ -359,19 +345,16 @@ class TestHealthMultiUserRedaction:
 
     def test_valid_bearer_returns_full_payload(
         self,
-        tmp_path: pathlib.Path,
+        mu_db_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import secrets
 
-        from parallax.migrations import migrate_to_latest
         from parallax.server.auth import hash_token
         from parallax.sqlite_store import connect as _connect, now_iso
 
-        p = tmp_path / "mu3.db"
-        c = _connect(p)
-        migrate_to_latest(c)
         plaintext = secrets.token_urlsafe(24)
+        c = _connect(mu_db_path)
         c.execute(
             "INSERT INTO api_tokens(token_hash, user_id, created_at, revoked_at, label)"
             " VALUES (?, ?, ?, NULL, NULL)",
@@ -379,7 +362,7 @@ class TestHealthMultiUserRedaction:
         )
         c.commit()
         c.close()
-        app = self._make_app(p, monkeypatch)
+        app = self._make_app(mu_db_path, monkeypatch)
         with TestClient(app) as cl:
             resp = cl.get(
                 "/inspect/health",
