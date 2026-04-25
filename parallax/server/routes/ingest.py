@@ -18,12 +18,15 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from parallax.ingest import ingest_claim, ingest_memory
+from parallax.router import RealMemoryRouter, is_router_enabled
+from parallax.router.contracts import IngestRequest
 from parallax.server.auth import current_user_id, require_auth
 from parallax.server.deps import get_conn
 from parallax.server.schemas import (
     IngestClaimRequest,
     IngestMemoryRequest,
     IngestResponse,
+    RouterIngestResponse,
 )
 
 router = APIRouter(
@@ -33,16 +36,39 @@ router = APIRouter(
 )
 
 
-@router.post("/memory", response_model=IngestResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/memory", response_model=None, status_code=status.HTTP_201_CREATED)
 def post_ingest_memory(
     body: IngestMemoryRequest,
     request: Request,
     conn: sqlite3.Connection = Depends(get_conn),
-) -> IngestResponse:
+) -> RouterIngestResponse | IngestResponse:
     # In multi-user mode the authenticated user_id on request.state wins;
     # a mismatched body.user_id is logged (potential leak attempt) but
     # never trusted. Single-token mode keeps body.user_id as today.
     user_id = current_user_id(request, body.user_id)
+    if is_router_enabled():
+        req = IngestRequest(
+            user_id=user_id,
+            kind="memory",
+            payload={
+                "body": body.summary,
+                "title": body.title,
+                "vault_path": body.vault_path,
+            },
+            source_id=body.source_id,
+        )
+        try:
+            result = RealMemoryRouter(conn).ingest(req)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        return RouterIngestResponse(
+            kind=result.kind,
+            id=result.identifier,
+            user_id=user_id,
+            deduped=result.deduped,
+        )
     memory_id = ingest_memory(
         conn,
         user_id=user_id,
@@ -54,13 +80,38 @@ def post_ingest_memory(
     return IngestResponse(kind="memory", id=memory_id, user_id=user_id)
 
 
-@router.post("/claim", response_model=IngestResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/claim", response_model=None, status_code=status.HTTP_201_CREATED)
 def post_ingest_claim(
     body: IngestClaimRequest,
     request: Request,
     conn: sqlite3.Connection = Depends(get_conn),
-) -> IngestResponse:
+) -> RouterIngestResponse | IngestResponse:
     user_id = current_user_id(request, body.user_id)
+    if is_router_enabled():
+        req = IngestRequest(
+            user_id=user_id,
+            kind="claim",
+            payload={
+                "subject": body.subject,
+                "predicate": body.predicate,
+                "object_": body.object_,
+                "confidence": body.confidence,
+                "state": body.state,
+            },
+            source_id=body.source_id,
+        )
+        try:
+            result = RealMemoryRouter(conn).ingest(req)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        return RouterIngestResponse(
+            kind=result.kind,
+            id=result.identifier,
+            user_id=user_id,
+            deduped=result.deduped,
+        )
     try:
         claim_id = ingest_claim(
             conn,
