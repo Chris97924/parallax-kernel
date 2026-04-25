@@ -292,7 +292,7 @@ class RealMemoryRouter:
         # silently parse claim aliases on a non-claim payload.
         if request.kind not in ("memory", "claim"):
             raise ValueError(
-                f"unsupported ingest kind {request.kind!r}; " f"expected 'memory' or 'claim'"
+                f"unsupported ingest kind {request.kind!r}; expected 'memory' or 'claim'"
             )
 
         payload = request.payload
