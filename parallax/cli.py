@@ -798,7 +798,7 @@ def _cmd_router_backfill_plan(*, user_id: str) -> int:
     try:
         before = _crosswalk_rows_for_user(conn, user_id)
         runner = BackfillRunner(conn)
-        planned = runner.plan_upserts(user_id)
+        planned = runner.plan_upserts(user_id, scope="all")
     finally:
         conn.close()
 

@@ -80,6 +80,7 @@ def _expected_token() -> str:
     return os.environ.get(PARALLAX_TOKEN_ENV, "").strip()
 
 
+
 def hash_token(plaintext: str) -> str:
     """Return the sha256 hex digest of ``plaintext``.
 

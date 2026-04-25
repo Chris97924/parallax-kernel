@@ -523,6 +523,40 @@ class TestAuth:
         assert resp.status_code == 200
 
 
+class TestInspectHealthAuth:
+    """H-2: /inspect/health gates full payload behind valid bearer token."""
+
+    def test_no_token_returns_ok_only(self, auth_client: TestClient) -> None:
+        resp = auth_client.get("/inspect/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" not in body
+        assert body["status"] in ("ok", "degraded")
+
+    def test_invalid_token_returns_ok_only(self, auth_client: TestClient) -> None:
+        resp = auth_client.get(
+            "/inspect/health", headers={"Authorization": "Bearer wrong"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" not in body
+
+    def test_valid_token_returns_full_payload(self, auth_client: TestClient) -> None:
+        resp = auth_client.get(
+            "/inspect/health", headers={"Authorization": "Bearer t0ken"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" in body
+        assert "journal_mode" in body
+
+    def test_open_mode_returns_full_payload(self, client: TestClient) -> None:
+        resp = client.get("/inspect/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" in body
+
+
 # ----- Full-loop: hook-shaped consumer → server → kernel --------------------
 
 
