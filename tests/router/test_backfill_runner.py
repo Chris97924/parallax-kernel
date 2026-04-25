@@ -236,9 +236,10 @@ def test_zero_write_invariant_raises_on_fingerprint_mismatch(
         runner.run(req)
 
     msg = str(exc_info.value)
-    assert "a" * 16 in msg
-    assert "b" * 16 in msg
+    # M-2 (critic review): fingerprint hex is emitted only to structured log,
+    # NOT in the exception message, to avoid leaking internal topology data.
     assert "read-only core invariant" in msg
+    assert "incident_id=" in msg
 
 
 # ---------------------------------------------------------------------------

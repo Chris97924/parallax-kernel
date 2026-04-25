@@ -276,49 +276,49 @@ def backfill_creation_events(conn: sqlite3.Connection) -> BackfillSummary:
     mem_added = 0
     claim_added = 0
 
-    for row in _memories_missing_created(conn):
-        payload = {f: row[f] for f in _MEMORY_FIELDS}
-        event_id = str(ULID())
-        conn.execute(
-            """
-            INSERT INTO events
-                (event_id, user_id, actor, event_type, target_kind, target_id,
-                 payload_json, approval_tier, created_at, session_id)
-            VALUES (?, ?, 'system:backfill', 'memory.created', 'memory', ?, ?,
-                    NULL, ?, NULL)
-            """,
-            (
-                event_id,
-                row["user_id"],
-                row["memory_id"],
-                json.dumps(payload, sort_keys=True),
-                row["created_at"],
-            ),
-        )
-        mem_added += 1
+    with conn:
+        for row in _memories_missing_created(conn):
+            payload = {f: row[f] for f in _MEMORY_FIELDS}
+            event_id = str(ULID())
+            conn.execute(
+                """
+                INSERT INTO events
+                    (event_id, user_id, actor, event_type, target_kind, target_id,
+                     payload_json, approval_tier, created_at, session_id)
+                VALUES (?, ?, 'system:backfill', 'memory.created', 'memory', ?, ?,
+                        NULL, ?, NULL)
+                """,
+                (
+                    event_id,
+                    row["user_id"],
+                    row["memory_id"],
+                    json.dumps(payload, sort_keys=True),
+                    row["created_at"],
+                ),
+            )
+            mem_added += 1
 
-    for row in _claims_missing_created(conn):
-        payload = {f: row[f] for f in _CLAIM_FIELDS}
-        event_id = str(ULID())
-        conn.execute(
-            """
-            INSERT INTO events
-                (event_id, user_id, actor, event_type, target_kind, target_id,
-                 payload_json, approval_tier, created_at, session_id)
-            VALUES (?, ?, 'system:backfill', 'claim.created', 'claim', ?, ?,
-                    NULL, ?, NULL)
-            """,
-            (
-                event_id,
-                row["user_id"],
-                row["claim_id"],
-                json.dumps(payload, sort_keys=True),
-                row["created_at"],
-            ),
-        )
-        claim_added += 1
+        for row in _claims_missing_created(conn):
+            payload = {f: row[f] for f in _CLAIM_FIELDS}
+            event_id = str(ULID())
+            conn.execute(
+                """
+                INSERT INTO events
+                    (event_id, user_id, actor, event_type, target_kind, target_id,
+                     payload_json, approval_tier, created_at, session_id)
+                VALUES (?, ?, 'system:backfill', 'claim.created', 'claim', ?, ?,
+                        NULL, ?, NULL)
+                """,
+                (
+                    event_id,
+                    row["user_id"],
+                    row["claim_id"],
+                    json.dumps(payload, sort_keys=True),
+                    row["created_at"],
+                ),
+            )
+            claim_added += 1
 
-    conn.commit()
     return BackfillSummary(
         memory_creations_added=mem_added,
         claim_creations_added=claim_added,
