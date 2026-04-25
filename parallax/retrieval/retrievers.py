@@ -30,7 +30,7 @@ _MODEL_LOCK = threading.Lock()
 # array of item embeddings. Invalidated implicitly whenever a newer claim /
 # event is ingested (the key changes). Sweeps that replay the same corpus
 # repeatedly (ablate_fallback, sweep_thresholds) see a single encode cost.
-_EMB_CACHE: dict[tuple[str, str], Any] = {}
+_EMB_CACHE: dict[tuple[str, str, int], Any] = {}
 _EMB_CACHE_LOCK = threading.Lock()
 
 
