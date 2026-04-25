@@ -16,6 +16,7 @@ from __future__ import annotations
 import dataclasses
 import sqlite3
 import time
+from typing import Literal
 
 from ulid import ULID
 
@@ -44,7 +45,9 @@ _c_dedup = get_counter("dedup_hit_total")
 
 __all__ = [
     "ingest_memory",
+    "ingest_memory_with_status",
     "ingest_claim",
+    "ingest_claim_with_status",
     "synthetic_direct_source_id",
 ]
 
@@ -86,10 +89,42 @@ def ingest_memory(
 ) -> str:
     """UPSERT a memory row. Returns the persisted memory_id.
 
+    Backward-compat wrapper around :func:`ingest_memory_with_status` that
+    drops the dedup flag. Prefer ``ingest_memory_with_status`` when the
+    caller needs to know whether the row was deduped (Lane D-3 router).
+    """
+    persisted_id, _deduped = ingest_memory_with_status(
+        conn,
+        user_id=user_id,
+        title=title,
+        summary=summary,
+        vault_path=vault_path,
+        source_id=source_id,
+    )
+    return persisted_id
+
+
+def ingest_memory_with_status(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    title: str | None,
+    summary: str | None,
+    vault_path: str,
+    source_id: str | None = None,
+) -> tuple[str, bool]:
+    """UPSERT a memory row. Returns ``(persisted_memory_id, deduped)``.
+
     Race-safe: attempts INSERT OR IGNORE then re-selects by the UNIQUE
     (content_hash, user_id) index so the caller always receives the id of
     the row that is actually persisted, never a ULID that was silently
     dropped by the IGNORE branch.
+
+    ``deduped`` is ``True`` when the persisted row is an existing match
+    (the new ULID was minted but discarded by INSERT OR IGNORE), ``False``
+    on first-write of a fresh content hash. The Lane D-3 router uses this
+    flag to populate ``IngestResult.deduped`` without a TOCTOU-prone
+    content_hash pre-check.
     """
     start = time.perf_counter()
     try:
@@ -145,10 +180,14 @@ def ingest_memory(
             )
         _log.info(
             "ingest_memory",
-            extra={"event": "ingest_memory", "user_id": user_id, "memory_id": persisted_id,
-                   "deduped": deduped},
+            extra={
+                "event": "ingest_memory",
+                "user_id": user_id,
+                "memory_id": persisted_id,
+                "deduped": deduped,
+            },
         )
-        return persisted_id
+        return persisted_id, deduped
     except Exception as exc:
         telemetry.emit_ingest_error(_tlog, kind="memory", user_id=user_id, error=str(exc))
         raise
@@ -165,13 +204,43 @@ def ingest_claim(
     object_: str,
     source_id: str | None = None,
     confidence: float | None = None,
-    state: str = "auto",
+    state: Literal["auto", "pending", "confirmed", "rejected"] = "auto",
 ) -> str:
     """UPSERT a claim row. Returns the persisted claim_id.
 
+    Backward-compat wrapper around :func:`ingest_claim_with_status` that
+    drops the dedup flag. Prefer ``ingest_claim_with_status`` when the
+    caller needs to know whether the row was deduped (Lane D-3 router).
+    """
+    persisted_id, _deduped = ingest_claim_with_status(
+        conn,
+        user_id=user_id,
+        subject=subject,
+        predicate=predicate,
+        object_=object_,
+        source_id=source_id,
+        confidence=confidence,
+        state=state,
+    )
+    return persisted_id
+
+
+def ingest_claim_with_status(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    subject: str,
+    predicate: str,
+    object_: str,
+    source_id: str | None = None,
+    confidence: float | None = None,
+    state: Literal["auto", "pending", "confirmed", "rejected"] = "auto",
+) -> tuple[str, bool]:
+    """UPSERT a claim row. Returns ``(persisted_claim_id, deduped)``.
+
     Race-safe via INSERT OR IGNORE + re-select on the UNIQUE
     (content_hash, source_id, user_id) index (ADR-005, v0.5.0-pre1). See
-    :func:`ingest_memory` for rationale.
+    :func:`ingest_memory_with_status` for the dedup-flag rationale.
 
     ``state`` must be a registered initial state in
     :data:`parallax.transitions.CLAIM_TRANSITIONS` (defensive validation at
@@ -181,8 +250,7 @@ def ingest_claim(
     """
     if state not in CLAIM_TRANSITIONS:
         raise ValueError(
-            f"invalid claim state {state!r}; "
-            f"expected one of {sorted(CLAIM_TRANSITIONS)}"
+            f"invalid claim state {state!r}; " f"expected one of {sorted(CLAIM_TRANSITIONS)}"
         )
     start = time.perf_counter()
     try:
@@ -237,10 +305,14 @@ def ingest_claim(
             )
         _log.info(
             "ingest_claim",
-            extra={"event": "ingest_claim", "user_id": user_id, "claim_id": persisted_id,
-                   "deduped": deduped},
+            extra={
+                "event": "ingest_claim",
+                "user_id": user_id,
+                "claim_id": persisted_id,
+                "deduped": deduped,
+            },
         )
-        return persisted_id
+        return persisted_id, deduped
     except Exception as exc:
         telemetry.emit_ingest_error(_tlog, kind="claim", user_id=user_id, error=str(exc))
         raise

@@ -14,7 +14,7 @@ import pytest
 
 from parallax.ingest import ingest_claim, ingest_memory
 from parallax.retrieval.contracts import RetrievalEvidence
-from parallax.router.contracts import BackfillRequest, IngestRequest, QueryRequest
+from parallax.router.contracts import QueryRequest
 from parallax.router.ports import BackfillPort, IngestPort, InspectPort, QueryPort
 from parallax.router.real_adapter import QUERY_DISPATCH, RealMemoryRouter
 from parallax.router.types import QueryType
@@ -99,7 +99,13 @@ def seeded_conn(conn: sqlite3.Connection) -> sqlite3.Connection:
 
 
 def _assert_evidence_contract(ev: RetrievalEvidence, query_type: QueryType) -> None:
-    """Assert the common contract for all five dispatches."""
+    """Assert the common contract for all five dispatches.
+
+    US-D3-04: ``body`` is the canonical evidence field added to every hit
+    under router-on. Existing keys are preserved so consumers that pre-date
+    the field still work; the field is always present (not Optional from
+    the consumer's perspective when the router is on).
+    """
     assert isinstance(ev, RetrievalEvidence)
     assert ev.stages == ("real_adapter_dispatch",)
     assert f"query_type={query_type.value}" in ev.notes
@@ -111,6 +117,7 @@ def _assert_evidence_contract(ev: RetrievalEvidence, query_type: QueryType) -> N
         assert set(hit.keys()) == {
             "id",
             "text",
+            "body",
             "created_at",
             "source_id",
             "kind",
@@ -121,8 +128,145 @@ def _assert_evidence_contract(ev: RetrievalEvidence, query_type: QueryType) -> N
         }
         assert isinstance(hit["score"], float)
         assert isinstance(hit["explain"], dict)
+        # US-D3-04: body is always a str (may be empty when the underlying
+        # evidence has no body-like aliases — explicit "" instead of None
+        # so consumers do not have to None-check).
+        assert isinstance(hit["body"], str)
     # len(hits) >= 0 — test passes on contract, not count
     assert len(ev.hits) >= 0
+
+
+def test_dto_body_field_is_str_on_every_hit(seeded_conn: sqlite3.Connection) -> None:
+    """US-D3-04: body is a ``str`` on every hit (never None) regardless of kind.
+
+    The contract assertion above already enforces ``isinstance(hit['body'], str)``;
+    this test additionally exercises a query type that produces hits and
+    confirms no hit slipped through with a non-str body.
+    """
+    router = RealMemoryRouter(seeded_conn)
+    ev = router.query(QueryRequest(query_type=QueryType.ENTITY_PROFILE, user_id=_USER, q=_SUBJECT))
+    if not ev.hits:
+        pytest.skip("ENTITY_PROFILE retrieval returned no hits in this fixture")
+    for hit in ev.hits:
+        assert isinstance(hit["body"], str)
+
+
+def test_dto_body_field_resolves_from_alias_for_claim(
+    seeded_conn: sqlite3.Connection,
+) -> None:
+    """US-D3-04: claim body resolves via CLAIM_OBJECT_KEYS precedence.
+
+    The seeded entity-profile claim has ``object='black formatter'`` so the
+    derived body must be a non-empty str via the ``object`` alias.
+    """
+    router = RealMemoryRouter(seeded_conn)
+    ev = router.query(QueryRequest(query_type=QueryType.ENTITY_PROFILE, user_id=_USER, q=_SUBJECT))
+    claim_hits = [h for h in ev.hits if h["kind"] == "claim"]
+    if not claim_hits:
+        pytest.skip("ENTITY_PROFILE retrieval returned no claim hits")
+    for hit in claim_hits:
+        assert hit["body"], f"claim body should resolve from object/object_ alias; got hit={hit}"
+
+
+def test_derive_body_handles_str_evidence_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P1: ``RetrievalHit.evidence`` is ``str | None``, not a Mapping.
+
+    When ``full`` doesn't resolve and we move on to ``evidence``, the str
+    must NOT be passed into ``_first_non_empty`` (which calls
+    ``payload.get(...)`` on it and raises AttributeError). The right
+    behaviour is to skip non-Mapping sources and fall back to title.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    realistic_hit = SimpleNamespace(
+        entity_kind="claim",
+        entity_id="c-realistic-1",
+        title="alice likes coffee",
+        # full has no recognized alias for the claim path
+        full={"unrelated": "x"},
+        # evidence is the realistic str shape from _claim_to_hit / _event_to_hit
+        evidence="confidence=0.7 state=auto",
+    )
+    # Must not raise; must return title fallback.
+    result = adapter_mod._derive_body(realistic_hit)
+    assert result == "alice likes coffee"
+    # No malformed-value warning either: missing-alias is the legacy-row path.
+    fake_log.warning.assert_not_called()
+
+
+def test_derive_body_legacy_row_no_alias_no_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A legacy row with no recognized body alias must NOT emit a warning.
+
+    Distinguishes "missing alias is normal" from "malformed value is a bug".
+    Otherwise operators see noise on every legacy row and tune the warning out.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    legacy_hit = SimpleNamespace(
+        entity_kind="memory",
+        entity_id="m-legacy-1",
+        title="legacy-title",
+        full={"unrelated": "x"},  # no recognized alias, no malformed value
+        evidence={"also_unrelated": "y"},
+    )
+    result = adapter_mod._derive_body(legacy_hit)
+    assert result == "legacy-title"
+    fake_log.warning.assert_not_called()
+
+
+def test_derive_body_fallback_emits_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HIGH-3 fix: when _derive_body falls back due to alias resolution
+    failure, emit a structured WARNING so operators can spot post-ingest
+    data corruption (a row whose persisted fields contain unexpected
+    types or surrogate chars) rather than silently coercing to title.
+
+    The project's parallax.obs.log JSON logger sets ``propagate=False`` so
+    caplog (which hooks the root logger) cannot capture these records.
+    Patch the module-level ``_log`` instead and assert on the call.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    bad_hit = SimpleNamespace(
+        entity_kind="memory",
+        entity_id="m-bad-1",
+        title="fallback-title",
+        full={"body": 0},  # type error → ValueError → fallback path
+        evidence=None,
+    )
+    result = adapter_mod._derive_body(bad_hit)
+    assert result == "fallback-title"
+
+    fake_log.warning.assert_called_once()
+    args, kwargs = fake_log.warning.call_args
+    assert args[0] == "_derive_body fallback"
+    extra = kwargs.get("extra", {})
+    assert extra.get("kind") == "memory"
+    assert extra.get("entity_id") == "m-bad-1"
+    assert extra.get("event") == "derive_body_fallback"
+    reasons = extra.get("reasons") or []
+    assert any("non-str" in r for r in reasons)
 
 
 def test_recent_context_dispatch(seeded_conn: sqlite3.Connection) -> None:
@@ -134,18 +278,14 @@ def test_recent_context_dispatch(seeded_conn: sqlite3.Connection) -> None:
 
 def test_artifact_context_dispatch(seeded_conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(seeded_conn)
-    req = QueryRequest(
-        query_type=QueryType.ARTIFACT_CONTEXT, user_id=_USER, q=_FILE_PATH
-    )
+    req = QueryRequest(query_type=QueryType.ARTIFACT_CONTEXT, user_id=_USER, q=_FILE_PATH)
     ev = router.query(req)
     _assert_evidence_contract(ev, QueryType.ARTIFACT_CONTEXT)
 
 
 def test_entity_profile_dispatch(seeded_conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(seeded_conn)
-    req = QueryRequest(
-        query_type=QueryType.ENTITY_PROFILE, user_id=_USER, q=_SUBJECT
-    )
+    req = QueryRequest(query_type=QueryType.ENTITY_PROFILE, user_id=_USER, q=_SUBJECT)
     ev = router.query(req)
     _assert_evidence_contract(ev, QueryType.ENTITY_PROFILE)
 
@@ -240,25 +380,6 @@ def test_real_router_is_inspect_port(conn: sqlite3.Connection) -> None:
 def test_real_router_is_backfill_port(conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(conn)
     assert isinstance(router, BackfillPort)
-
-
-# ---------------------------------------------------------------------------
-# NotImplementedError stubs — ingest/backfill defer to Lane D-3
-# ---------------------------------------------------------------------------
-
-
-def test_ingest_raises_not_implemented(conn: sqlite3.Connection) -> None:
-    router = RealMemoryRouter(conn)
-    req = IngestRequest(user_id=_USER, kind="memory", payload={"body": "hi"})
-    with pytest.raises(NotImplementedError, match="Lane D-2 freeze: RealMemoryRouter.ingest"):
-        router.ingest(req)
-
-
-def test_backfill_stub_raises_not_implemented(conn: sqlite3.Connection) -> None:
-    router = RealMemoryRouter(conn)
-    req = BackfillRequest(user_id=_USER, crosswalk_version="laned2_seed_v1", dry_run=True)
-    with pytest.raises(NotImplementedError, match="Lane D-2 freeze: RealMemoryRouter.backfill"):
-        router.backfill(req)
 
 
 # ---------------------------------------------------------------------------
