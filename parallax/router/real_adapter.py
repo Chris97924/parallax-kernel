@@ -278,6 +278,10 @@ class RealMemoryRouter:
             )
 
         payload = request.payload
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                f"payload must be a Mapping, got {type(payload).__name__!r}"
+            )
 
         if request.kind == "memory":
             body = _first_non_empty(payload, MEMORY_BODY_KEYS, field="memory.body")
