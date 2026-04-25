@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
+import uuid
 from contextlib import nullcontext
+
+_log = logging.getLogger(__name__)
 
 from parallax.router.contracts import BackfillReport, BackfillRequest
 from parallax.router.types import MappingState
@@ -253,9 +257,13 @@ class BackfillRunner:
                 crosswalk_post = _table_snapshot(self._conn, "crosswalk")
 
             if core_pre != core_post:
+                incident_id = str(uuid.uuid4())
+                _log.warning(
+                    "BackfillRunner core invariant violated",
+                    extra={"pre": core_pre, "post": core_post, "incident_id": incident_id},
+                )
                 raise RuntimeError(
-                    "BackfillRunner violated read-only core invariant:"
-                    f" pre={core_pre[:16]} post={core_post[:16]}"
+                    f"BackfillRunner violated read-only core invariant: incident_id={incident_id}"
                 )
 
             if request.dry_run and crosswalk_pre != crosswalk_post:
