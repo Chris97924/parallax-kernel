@@ -37,6 +37,7 @@ from starlette.requests import Request
 from parallax import __version__
 from parallax.server.auth import auth_configured
 from parallax.server.deps import DBFactory, default_db_factory
+from parallax.server.routes.backfill import router as backfill_router
 from parallax.server.routes.export import router as export_router
 from parallax.server.routes.ingest import router as ingest_router
 from parallax.server.routes.inspect import router as inspect_router
@@ -141,6 +142,7 @@ def create_app(
     app.include_router(query_router)
     app.include_router(inspect_router)
     app.include_router(export_router)
+    app.include_router(backfill_router)
 
     if os.environ.get("PARALLAX_VIEWER_ENABLED", "0") == "1":
         from parallax.server.viewer import router as viewer_router

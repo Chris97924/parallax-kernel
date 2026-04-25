@@ -16,6 +16,11 @@ __all__ = [
     "IngestMemoryRequest",
     "IngestClaimRequest",
     "IngestResponse",
+    "RouterIngestResponse",
+    "BackfillBodyRequest",
+    "ArbitrationDecisionDTO",
+    "BackfillReportResponse",
+    "HealthOkResponse",
     "RetrievalHitDTO",
     "QueryResponse",
     "ReminderResponse",
@@ -82,6 +87,44 @@ class IngestResponse(BaseModel):
     kind: Literal["memory", "claim"]
     id: str
     user_id: str
+
+
+class RouterIngestResponse(BaseModel):
+    """IngestResponse with deduplication flag (present under MEMORY_ROUTER=true)."""
+
+    kind: Literal["memory", "claim"]
+    id: str
+    user_id: str
+    deduped: bool
+
+
+class BackfillBodyRequest(_StrictModel):
+    user_id: str = Field(min_length=1, max_length=128)
+    crosswalk_version: str = Field(min_length=1)
+    dry_run: bool = True
+    scope: Literal["all", "sample"] = "sample"
+
+
+class ArbitrationDecisionDTO(BaseModel):
+    canonical_field: str
+    state: str
+    reason_code: str
+    reason: str
+    confidence: float
+    requires_manual_review: bool
+
+
+class BackfillReportResponse(BaseModel):
+    rows_examined: int
+    rows_mapped: int
+    rows_unmapped: int
+    rows_conflict: int
+    writes_performed: int
+    arbitrations: list[ArbitrationDecisionDTO]
+
+
+class HealthOkResponse(BaseModel):
+    status: Literal["ok", "degraded"]
 
 
 class RetrievalHitDTO(BaseModel):

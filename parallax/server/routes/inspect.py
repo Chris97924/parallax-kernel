@@ -4,7 +4,8 @@ Two endpoints:
 
 * ``GET /inspect/health`` — wraps :func:`parallax.telemetry.health`. Marks the
   instance ``degraded`` when a last_error is recorded or WAL isn't enabled,
-  otherwise ``ok``.
+  otherwise ``ok``. Unauthenticated callers receive ok-only payload; bearer
+  auth returns full HealthResponse.
 * ``GET /inspect/info`` — wraps :func:`parallax.introspection.parallax_info`
   and folds the health payload into the response so dashboards only need
   one round-trip.
@@ -21,18 +22,21 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from parallax.introspection import parallax_info
+from parallax.router import RealMemoryRouter, is_router_enabled
 from parallax.server.auth import require_auth
 from parallax.server.deps import get_conn
-from parallax.server.schemas import HealthResponse, InspectResponse
+from parallax.server.schemas import HealthOkResponse, HealthResponse, InspectResponse
 from parallax.telemetry import health as telemetry_health
+
+_optional_bearer = HTTPBearer(auto_error=False)
 
 router = APIRouter(
     prefix="/inspect",
     tags=["inspect"],
-    dependencies=[Depends(require_auth)],
 )
 
 
@@ -64,14 +68,46 @@ def _build_health(conn: sqlite3.Connection) -> HealthResponse:
     )
 
 
-@router.get("/health", response_model=HealthResponse)
+def _build_health_with_router(conn: sqlite3.Connection) -> HealthResponse:
+    """Compute HealthResponse, optionally merging router liveness.
+
+    When MEMORY_ROUTER is enabled, the router's health report is merged
+    into the response — if the router reports not-ok, the status is degraded.
+    US-D3-03 requirement; no module-level caching to avoid cross-request
+    state contamination in tests and multi-factory setups.
+    """
+    result = _build_health(conn)
+    if is_router_enabled():
+        router_report = RealMemoryRouter(conn).health()
+        if not router_report.ok:
+            result = HealthResponse(
+                status="degraded",
+                db_path=result.db_path,
+                journal_mode=result.journal_mode,
+                table_counts=result.table_counts,
+                last_error="router_unhealthy",
+            )
+    return result
+
+
+@router.get("/health", response_model=None)
 def get_health(
+    request: Request,
     conn: sqlite3.Connection = Depends(get_conn),
-) -> HealthResponse:
-    return _build_health(conn)
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+) -> HealthResponse | HealthOkResponse:
+    health = _build_health_with_router(conn)
+    # H-2: unauthenticated callers get ok-only payload when auth is configured.
+    # In open mode (no PARALLAX_TOKEN), full response is returned to all callers
+    # since there is no security model — bearer auth is not meaningful.
+    from parallax.server.auth import auth_configured
+
+    if auth_configured() and credentials is None:
+        return HealthOkResponse(status=health.status)
+    return health
 
 
-@router.get("/info", response_model=InspectResponse)
+@router.get("/info", response_model=InspectResponse, dependencies=[Depends(require_auth)])
 def get_info(
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> InspectResponse:

@@ -89,7 +89,7 @@ def _router_hit_to_dto(hit: dict[str, Any], *, level: int, query_type: str) -> R
         "score_components": {"router": 1.0},
         "query_type": query_type,
     }
-    if isinstance(upstream_explain, dict):
+    if level >= 3 and isinstance(upstream_explain, dict):
         explain["upstream"] = upstream_explain
 
     return RetrievalHitDTO(
