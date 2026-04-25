@@ -276,6 +276,10 @@ def backfill_creation_events(conn: sqlite3.Connection) -> BackfillSummary:
     mem_added = 0
     claim_added = 0
 
+    # Single transaction wraps both loops intentionally: all-or-nothing
+    # atomicity ensures idempotency on retry (partial commit would silently
+    # skip already-backfilled rows while leaving the other kind unreconciled).
+    # Do NOT split into two `with conn:` blocks.
     with conn:
         for row in _memories_missing_created(conn):
             payload = {f: row[f] for f in _MEMORY_FIELDS}
