@@ -62,7 +62,8 @@ def _load_model() -> Any:
 def _embed_items_cached(model: Any, user_id: str, candidates: list[dict]) -> Any:
     """Return item embeddings, cached by (user_id, max created_at)."""
     max_ts = max((c.get("created_at") or "" for c in candidates), default="")
-    key = (user_id, max_ts)
+    ids_fp = hash(tuple(c.get("id", c.get("text", "")) for c in candidates))
+    key = (user_id, max_ts, ids_fp)
     with _EMB_CACHE_LOCK:
         hit = _EMB_CACHE.get(key)
         if hit is not None and len(hit) == len(candidates):

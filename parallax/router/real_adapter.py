@@ -296,6 +296,10 @@ class RealMemoryRouter:
             )
 
         payload = request.payload
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                f"payload must be a Mapping, got {type(payload).__name__!r}"
+            )
 
         if request.kind == "memory":
             body = _first_non_empty(payload, MEMORY_BODY_KEYS, field="memory.body")
@@ -319,12 +323,20 @@ class RealMemoryRouter:
         predicate = _first_non_empty(payload, CLAIM_PREDICATE_KEYS, field="claim.predicate")
         object_ = _first_non_empty(payload, CLAIM_OBJECT_KEYS, field="claim.object_")
         confidence = _coerce_optional_float(payload.get("confidence"), field="claim.confidence")
+        if confidence is not None and not (0.0 <= confidence <= 1.0):
+            raise ValueError(
+                f"claim.confidence must be in [0, 1], got {confidence!r}"
+            )
         # Codex P2: pass caller-supplied state through. Review-workflow
         # callers (e.g. extract layer with low-confidence "pending" claims)
         # would otherwise have their intent silently rewritten to the
         # "auto" default. ingest_claim_with_status validates against
         # CLAIM_TRANSITIONS and raises on unknown values.
         state = payload.get("state", "auto")
+        if not isinstance(state, str):
+            raise ValueError(
+                f"claim.state must be a str, got {type(state).__name__!r}"
+            )
         persisted_id, deduped = ingest_claim_with_status(
             self._conn,
             user_id=request.user_id,
