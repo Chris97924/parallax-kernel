@@ -710,17 +710,17 @@ def _fmt_arbitration_pretty(d: dict) -> str:
     """Format one ArbitrationDecision JSON dict as a human-readable line."""
     canonical_ref = d.get("canonical_field", "-")
     state = d.get("state", "-")
-    candidates = d.get("candidates") or []
-    evidence_count = len(candidates)
     selected = d.get("selected") or {}
     source_id = selected.get("source", "-") if isinstance(selected, dict) else "-"
-    # Stable column ordering matches dataclass field order: canonical_field,
-    # state, candidates (evidence_count), selected.source.
+    candidates = d.get("candidates") or []
+    evidence_count = len(candidates)
+    # Column order matches ArbitrationDecision dataclass field order:
+    # canonical_field, state, selected (source), candidates (evidence_count).
     return (
         f"canonical_ref={canonical_ref}"
         f"  decided_state={state}"
-        f"  evidence_count={evidence_count}"
         f"  source={source_id}"
+        f"  evidence_count={evidence_count}"
     )
 
 
@@ -863,7 +863,6 @@ def _cmd_router_backfill_apply(*, user_id: str, yes: bool) -> int:
         conn.commit()
     except (ValueError, RuntimeError) as exc:
         print(f"backfill apply failed: {exc}", file=sys.stderr)
-        conn.close()
         return _EXIT_USER_ERROR
     finally:
         conn.close()
