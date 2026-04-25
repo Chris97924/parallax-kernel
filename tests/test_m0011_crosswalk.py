@@ -36,7 +36,7 @@ def test_migrate_to_latest_creates_crosswalk(tmp_path: pathlib.Path) -> None:
             "content_hash",
             "source_id",
             "vault_path",
-            "dpkg_doc_id",
+            "aphelion_doc_id",
             "last_event_id_seen",
             "last_embedded_at",
             "created_at",
