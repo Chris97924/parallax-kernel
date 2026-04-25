@@ -296,11 +296,17 @@ class RealMemoryRouter:
             )
             return IngestResult(kind="memory", identifier=persisted_id, deduped=deduped)
 
-        # request.kind == "claim" — Literal type guarantees no other branch.
+        # request.kind == "claim" — guarded above against unsupported kinds.
         subject = _first_non_empty(payload, CLAIM_SUBJECT_KEYS, field="claim.subject")
         predicate = _first_non_empty(payload, CLAIM_PREDICATE_KEYS, field="claim.predicate")
         object_ = _first_non_empty(payload, CLAIM_OBJECT_KEYS, field="claim.object_")
         confidence = _coerce_optional_float(payload.get("confidence"), field="claim.confidence")
+        # Codex P2: pass caller-supplied state through. Review-workflow
+        # callers (e.g. extract layer with low-confidence "pending" claims)
+        # would otherwise have their intent silently rewritten to the
+        # "auto" default. ingest_claim_with_status validates against
+        # CLAIM_TRANSITIONS and raises on unknown values.
+        state = payload.get("state", "auto")
         persisted_id, deduped = ingest_claim_with_status(
             self._conn,
             user_id=request.user_id,
@@ -309,6 +315,7 @@ class RealMemoryRouter:
             object_=object_,
             source_id=request.source_id,
             confidence=confidence,
+            state=state,
         )
         return IngestResult(kind="claim", identifier=persisted_id, deduped=deduped)
 

@@ -335,3 +335,55 @@ def test_ingest_claim_confidence_bool_rejected(conn: sqlite3.Connection) -> None
     }
     with pytest.raises(ValueError, match=r"bool not accepted"):
         router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+
+
+# --- Codex Round-3 P2: claim state must round-trip from payload ----------
+
+
+def test_ingest_claim_state_from_payload_persists(conn: sqlite3.Connection) -> None:
+    """Codex P2: caller-supplied claim state (e.g. 'pending' from review
+    workflow) must NOT be silently rewritten to the 'auto' default."""
+    router = RealMemoryRouter(conn)
+    payload = {
+        "subject": "alice",
+        "predicate": "asserts",
+        "object_": "coffee is best",
+        "state": "pending",
+    }
+    result = router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+    row = conn.execute(
+        "SELECT state FROM claims WHERE claim_id = ?",
+        (result.identifier,),
+    ).fetchone()
+    assert row["state"] == "pending"
+
+
+def test_ingest_claim_state_omitted_defaults_to_auto(conn: sqlite3.Connection) -> None:
+    """When state is absent from payload, defaults to 'auto' (preserves
+    pre-D-3 behavior)."""
+    router = RealMemoryRouter(conn)
+    payload = {
+        "subject": "alice",
+        "predicate": "asserts",
+        "object_": "coffee",
+    }
+    result = router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+    row = conn.execute(
+        "SELECT state FROM claims WHERE claim_id = ?",
+        (result.identifier,),
+    ).fetchone()
+    assert row["state"] == "auto"
+
+
+def test_ingest_claim_invalid_state_in_payload_raises(conn: sqlite3.Connection) -> None:
+    """Caller-supplied invalid state (not in CLAIM_TRANSITIONS) must raise,
+    not silently fall back to a default."""
+    router = RealMemoryRouter(conn)
+    payload = {
+        "subject": "alice",
+        "predicate": "asserts",
+        "object_": "x",
+        "state": "bogus",
+    }
+    with pytest.raises(ValueError, match=r"invalid claim state"):
+        router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
