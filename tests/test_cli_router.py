@@ -6,9 +6,7 @@ US-D3-06: backfill plan / apply
 
 from __future__ import annotations
 
-import json
 import pathlib
-import textwrap
 
 import pytest
 
@@ -18,7 +16,6 @@ from parallax.migrations import migrate_to_latest
 from parallax.router.contracts import ArbitrationDecision
 from parallax.router.types import FieldCandidate, MappingState
 from parallax.sqlite_store import connect
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -70,6 +67,7 @@ def seeded_db(tmp_path: pathlib.Path) -> pathlib.Path:
 def _set_env(monkeypatch: pytest.MonkeyPatch, seeded_db: pathlib.Path) -> None:
     monkeypatch.setenv("PARALLAX_DB_PATH", str(seeded_db))
     monkeypatch.setenv("PARALLAX_USER_ID", "u")
+    monkeypatch.setenv("MEMORY_ROUTER", "true")
 
 
 def _make_decision(canonical_field: str = "test_field") -> ArbitrationDecision:
@@ -307,3 +305,15 @@ class TestBackfillApply:
         ).fetchall()
         c.close()
         assert len(rows) > 0, "apply should have written crosswalk rows"
+
+    def test_apply_requires_memory_router(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        monkeypatch.delenv("MEMORY_ROUTER", raising=False)
+        rc = main(["router", "backfill", "apply", "--yes"])
+        _, err = capsys.readouterr()
+
+        assert rc == 1
+        assert "MEMORY_ROUTER" in err

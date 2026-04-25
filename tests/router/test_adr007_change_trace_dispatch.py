@@ -60,7 +60,6 @@ def test_change_trace_bug_kind_dispatches_to_by_bug_fix(
     # by_bug_fix returns claims whose predicate matches ^(fix|bug[-_]?fix|bugfix)
     # The seeded bug claim has predicate "fix:bug-1234" which matches.
     assert evidence.hits, "expected at least one hit from by_bug_fix"
-    retrieved_ids = {h["id"] for h in evidence.hits}
     # notes should reflect the actual retriever
     assert any("by_bug_fix" in n for n in evidence.notes), (
         f"notes should include by_bug_fix; got {evidence.notes}"
@@ -116,3 +115,19 @@ def test_query_request_params_field_backward_compatible() -> None:
     """params defaults to None — existing call sites are unaffected."""
     req = QueryRequest(query_type=QueryType.RECENT_CONTEXT, user_id="u")
     assert req.params is None
+
+
+def test_change_trace_unknown_legacy_kind_defaults_to_by_decision(
+    seeded_conn: sqlite3.Connection,
+) -> None:
+    """Unrecognized legacy_kind stays on by_decision path (documents design choice)."""
+    router = RealMemoryRouter(seeded_conn)
+    req = QueryRequest(
+        query_type=QueryType.CHANGE_TRACE,
+        user_id=_USER,
+        params={"legacy_kind": "nonsense"},
+    )
+    evidence = router.query(req)
+    assert any("by_decision" in n for n in evidence.notes), (
+        f"unknown legacy_kind should fall through to by_decision; got {evidence.notes}"
+    )

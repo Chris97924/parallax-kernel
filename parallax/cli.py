@@ -831,9 +831,14 @@ def _cmd_router_backfill_plan(*, user_id: str) -> int:
 
 
 def _cmd_router_backfill_apply(*, user_id: str, yes: bool) -> int:
+    from parallax.router import is_router_enabled
     from parallax.router.backfill import BackfillRunner
     from parallax.router.contracts import BackfillRequest
     from parallax.router.crosswalk_seed import seed_hash
+
+    if not is_router_enabled():
+        print("backfill apply requires MEMORY_ROUTER=true", file=sys.stderr)
+        return _EXIT_USER_ERROR
 
     if not yes:
         print(
