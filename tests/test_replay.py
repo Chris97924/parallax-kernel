@@ -81,18 +81,14 @@ class TestReplayRebuild:
     def test_state_change_applied_in_order(
         self, conn: sqlite3.Connection, tmp_path: pathlib.Path
     ) -> None:
-        cid = ingest_claim(
-            conn, user_id="u", subject="x", predicate="y", object_="z"
-        )
+        cid = ingest_claim(conn, user_id="u", subject="x", predicate="y", object_="z")
         record_claim_state_changed(
             conn, user_id="u", claim_id=cid, from_state="auto", to_state="confirmed"
         )
         fresh = _fresh_conn(tmp_path, "state.db")
         _seed_source(fresh, "direct:u", "u")
         replay_events(conn, into_conn=fresh)
-        row = fresh.execute(
-            "SELECT state FROM claims WHERE claim_id = ?", (cid,)
-        ).fetchone()
+        row = fresh.execute("SELECT state FROM claims WHERE claim_id = ?", (cid,)).fetchone()
         assert row["state"] == "confirmed"
         fresh.close()
 
@@ -104,8 +100,13 @@ class TestReplayRebuild:
         # event carrying updated_at in the payload. Replay MUST reproduce
         # both columns bit-for-bit (US-005 acceptance criterion).
         from parallax.extract.review import approve
+
         cid = ingest_claim(
-            conn, user_id="u", subject="x", predicate="y", object_="z",
+            conn,
+            user_id="u",
+            subject="x",
+            predicate="y",
+            object_="z",
             state="pending",
         )
         approve(conn, cid)
@@ -131,9 +132,8 @@ class TestReplayRebuild:
         # Synthesize a memory.state_changed event with explicit updated_at
         # to lock the memory branch of the replay handler.
         from parallax.events import record_event
-        mid = ingest_memory(
-            conn, user_id="u", title="t", summary="s", vault_path="v.md"
-        )
+
+        mid = ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
         new_updated_at = "2099-12-31T23:59:59.000000+00:00"
         record_event(
             conn,
@@ -142,8 +142,7 @@ class TestReplayRebuild:
             event_type="memory.state_changed",
             target_kind="memory",
             target_id=mid,
-            payload={"from": "active", "to": "archived",
-                     "updated_at": new_updated_at},
+            payload={"from": "active", "to": "archived", "updated_at": new_updated_at},
         )
         conn.execute(
             "UPDATE memories SET state = ?, updated_at = ? WHERE memory_id = ?",
@@ -166,13 +165,11 @@ class TestReplayRebuild:
     ) -> None:
         ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
         # Insert a garbage event directly
-        conn.execute(
-            """INSERT INTO events(event_id, user_id, actor, event_type,
+        conn.execute("""INSERT INTO events(event_id, user_id, actor, event_type,
                                   target_kind, target_id, payload_json,
                                   created_at)
                VALUES ('evt-x', 'u', 'system', 'custom.unknown', NULL, NULL,
-                       '{}', datetime('now'))"""
-        )
+                       '{}', datetime('now'))""")
         conn.commit()
         fresh = _fresh_conn(tmp_path, "skip.db")
         _seed_source(fresh, "direct:u", "u")
@@ -195,9 +192,7 @@ class TestReplayRebuild:
 
 
 class TestBackfillCreationEvents:
-    def _insert_raw_memory(
-        self, conn: sqlite3.Connection, vault: str
-    ) -> Memory:
+    def _insert_raw_memory(self, conn: sqlite3.Connection, vault: str) -> Memory:
         _seed_source(conn, "direct:u", "u")
         now = now_iso()
         ch = content_hash("t", "s", vault)
@@ -216,9 +211,7 @@ class TestBackfillCreationEvents:
         insert_memory(conn, mem)
         return mem
 
-    def _insert_raw_claim(
-        self, conn: sqlite3.Connection, subj: str
-    ) -> Claim:
+    def _insert_raw_claim(self, conn: sqlite3.Connection, subj: str) -> Claim:
         _seed_source(conn, "direct:u", "u")
         now = now_iso()
         ch = content_hash(subj, "y", "z", "direct:u", "u")
@@ -238,9 +231,7 @@ class TestBackfillCreationEvents:
         insert_claim(conn, cla)
         return cla
 
-    def test_backfill_synthesizes_create_events(
-        self, conn: sqlite3.Connection
-    ) -> None:
+    def test_backfill_synthesizes_create_events(self, conn: sqlite3.Connection) -> None:
         self._insert_raw_memory(conn, "v1.md")
         self._insert_raw_memory(conn, "v2.md")
         self._insert_raw_claim(conn, "a")
@@ -286,11 +277,46 @@ class TestBackfillCreationEvents:
         assert _rows(fresh, "SELECT * FROM claims ORDER BY claim_id") == src_claims
         fresh.close()
 
-    def test_backfill_skips_rows_that_already_have_created(
-        self, conn: sqlite3.Connection
-    ) -> None:
+    def test_backfill_skips_rows_that_already_have_created(self, conn: sqlite3.Connection) -> None:
         # An ingest_memory already emits memory.created, so backfill finds
         # nothing to add.
         ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
         summary = backfill_creation_events(conn)
         assert summary.memory_creations_added == 0
+
+
+class TestInPlaceReplay:
+    """replay_events(conn) with no into_conn — reads and writes on the same connection."""
+
+    def test_inplace_does_not_duplicate_rows(self, conn: sqlite3.Connection) -> None:
+        # Seed via events so the events log is the source of truth.
+        ingest_memory(conn, user_id="u", title="t", summary="s", vault_path="v.md")
+        ingest_claim(conn, user_id="u", subject="x", predicate="y", object_="z")
+
+        # Wipe the derived rows; events remain.
+        conn.execute("DELETE FROM memories")
+        conn.execute("DELETE FROM claims")
+        conn.commit()
+
+        summary = replay_events(conn)
+
+        assert summary.memories_rebuilt == 1
+        assert summary.claims_rebuilt == 1
+        assert conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 1
+
+    def test_inplace_applies_state_changes(self, conn: sqlite3.Connection) -> None:
+        cid = ingest_claim(
+            conn, user_id="u", subject="x", predicate="y", object_="z", state="pending"
+        )
+        record_claim_state_changed(
+            conn, user_id="u", claim_id=cid, from_state="pending", to_state="confirmed"
+        )
+
+        conn.execute("DELETE FROM claims")
+        conn.commit()
+
+        replay_events(conn)
+
+        row = conn.execute("SELECT state FROM claims WHERE claim_id = ?", (cid,)).fetchone()
+        assert row["state"] == "confirmed"

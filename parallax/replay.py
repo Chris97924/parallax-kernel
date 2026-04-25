@@ -116,9 +116,7 @@ def _apply_claim_created(conn: sqlite3.Connection, payload: dict) -> bool:
     return True
 
 
-def _apply_claim_state_changed(
-    conn: sqlite3.Connection, target_id: str, payload: dict
-) -> bool:
+def _apply_claim_state_changed(conn: sqlite3.Connection, target_id: str, payload: dict) -> bool:
     to_state = payload.get("to")
     if not to_state or not target_id:
         return False
@@ -137,9 +135,7 @@ def _apply_claim_state_changed(
     return True
 
 
-def _apply_memory_state_changed(
-    conn: sqlite3.Connection, target_id: str, payload: dict
-) -> bool:
+def _apply_memory_state_changed(conn: sqlite3.Connection, target_id: str, payload: dict) -> bool:
     to_state = payload.get("to")
     if not to_state or not target_id:
         return False
@@ -177,14 +173,16 @@ def replay_events(
     events_skipped = 0
     skipped: set[str] = set()
 
-    cur = conn.execute(
-        """
+    cur = conn.execute("""
         SELECT event_type, target_id, payload_json
         FROM events
         ORDER BY created_at ASC, event_id ASC
-        """
-    )
-    for row in cur:
+        """)
+    # In-place replay (into_conn is None) reads and writes on the same
+    # connection; buffer rows first so write-side commits don't invalidate
+    # the open read cursor.  Cross-connection replay streams to stay O(1).
+    rows = cur.fetchall() if into_conn is None else cur
+    for row in rows:
         events_consumed += 1
         event_type = row["event_type"]
         target_id = row["target_id"]
@@ -236,8 +234,7 @@ def replay_events(
 
 
 def _memories_missing_created(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
-        """
+    return conn.execute("""
         SELECT m.*
         FROM memories m
         WHERE NOT EXISTS (
@@ -246,13 +243,11 @@ def _memories_missing_created(conn: sqlite3.Connection) -> list[sqlite3.Row]:
               AND e.target_kind = 'memory'
               AND e.target_id = m.memory_id
         )
-        """
-    ).fetchall()
+        """).fetchall()
 
 
 def _claims_missing_created(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
-        """
+    return conn.execute("""
         SELECT c.*
         FROM claims c
         WHERE NOT EXISTS (
@@ -261,8 +256,7 @@ def _claims_missing_created(conn: sqlite3.Connection) -> list[sqlite3.Row]:
               AND e.target_kind = 'claim'
               AND e.target_id = c.claim_id
         )
-        """
-    ).fetchall()
+        """).fetchall()
 
 
 def backfill_creation_events(conn: sqlite3.Connection) -> BackfillSummary:
