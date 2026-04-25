@@ -26,11 +26,11 @@ _MODEL: Any = None
 _MODEL_LOAD_ERROR: Exception | None = None
 _MODEL_LOCK = threading.Lock()
 
-# Keyed by (user_id, max_created_at_in_candidate_pool). Value is the numpy
-# array of item embeddings. Invalidated implicitly whenever a newer claim /
-# event is ingested (the key changes). Sweeps that replay the same corpus
-# repeatedly (ablate_fallback, sweep_thresholds) see a single encode cost.
-_EMB_CACHE: dict[tuple[str, str], Any] = {}
+# Keyed by (user_id, max_created_at_in_candidate_pool, ids_fp). Value is the
+# numpy array of item embeddings. Invalidated when a newer item arrives (key
+# changes) or when the candidate set composition changes (ids_fp changes).
+# Sweeps that replay the same corpus repeatedly see a single encode cost.
+_EMB_CACHE: dict[tuple[str, str, int], Any] = {}
 _EMB_CACHE_LOCK = threading.Lock()
 
 
@@ -62,7 +62,11 @@ def _load_model() -> Any:
 def _embed_items_cached(model: Any, user_id: str, candidates: list[dict]) -> Any:
     """Return item embeddings, cached by (user_id, max created_at)."""
     max_ts = max((c.get("created_at") or "" for c in candidates), default="")
-    key = (user_id, max_ts)
+    # hash() varies per-process (PYTHONHASHSEED), but _EMB_CACHE is a
+    # module-level dict (process-local), so cross-process instability is
+    # intentional and harmless — each worker maintains its own cache.
+    ids_fp = hash(tuple(c.get("id", c.get("text", "")) for c in candidates))
+    key = (user_id, max_ts, ids_fp)
     with _EMB_CACHE_LOCK:
         hit = _EMB_CACHE.get(key)
         if hit is not None and len(hit) == len(candidates):

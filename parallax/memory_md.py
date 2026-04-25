@@ -291,7 +291,7 @@ def ingest_memory_md(
                 skipped_privacy.append(entry.filename)
                 continue
 
-            card_id = hashlib.sha1(
+            card_id = hashlib.sha256(
                 f"{user_id}::{entry.filename}".encode()
             ).hexdigest()[:16]
 

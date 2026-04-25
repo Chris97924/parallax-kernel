@@ -387,3 +387,40 @@ def test_ingest_claim_invalid_state_in_payload_raises(conn: sqlite3.Connection) 
     }
     with pytest.raises(ValueError, match=r"invalid claim state"):
         router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+
+
+# --- Codex Round-3 P1/P2: payload Mapping guard, confidence range, state type
+
+
+def test_ingest_payload_not_a_mapping_raises(conn: sqlite3.Connection) -> None:
+    """Codex R3 P1: payload must be a Mapping; lists/strings from unvalidated JSON
+    must raise ValueError before reaching _first_non_empty."""
+    router = RealMemoryRouter(conn)
+    req = IngestRequest(user_id=_USER, kind="memory", payload={"body": "ok", "vault_path": "v.md"})
+    object.__setattr__(req, "payload", ["not", "a", "mapping"])
+    with pytest.raises(ValueError, match=r"payload must be a Mapping, got"):
+        router.ingest(req)
+
+
+def test_ingest_claim_confidence_out_of_range_raises(conn: sqlite3.Connection) -> None:
+    """Codex R3 P2: confidence > 1.0 must raise, not persist silently."""
+    router = RealMemoryRouter(conn)
+    payload = {"subject": "alice", "predicate": "rates", "object_": "x", "confidence": 1.5}
+    with pytest.raises(ValueError, match=r"claim\.confidence must be in \[0, 1\]"):
+        router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+
+
+def test_ingest_claim_confidence_negative_raises(conn: sqlite3.Connection) -> None:
+    """Codex R3 P2: confidence < 0.0 must raise, not persist silently."""
+    router = RealMemoryRouter(conn)
+    payload = {"subject": "alice", "predicate": "rates", "object_": "x", "confidence": -0.1}
+    with pytest.raises(ValueError, match=r"claim\.confidence must be in \[0, 1\]"):
+        router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))
+
+
+def test_ingest_claim_state_non_str_raises(conn: sqlite3.Connection) -> None:
+    """Codex R3 P2: state must be a str; list/int from unvalidated JSON must raise."""
+    router = RealMemoryRouter(conn)
+    payload = {"subject": "alice", "predicate": "p", "object_": "o", "state": []}
+    with pytest.raises(ValueError, match=r"claim\.state must be a str, got"):
+        router.ingest(IngestRequest(user_id=_USER, kind="claim", payload=payload))

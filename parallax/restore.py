@@ -71,6 +71,8 @@ def _safe_extract(tar: tarfile.TarFile, dest: pathlib.Path) -> None:
     for member in tar.getmembers():
         if not _is_safe_member(member, dest):
             raise tarfile.TarError(f"unsafe archive entry rejected: {member.name!r}")
+    # filter="data" is Python 3.12-only; _is_safe_member above provides the
+    # equivalent path-traversal and special-file protection on 3.11.
     tar.extractall(path=str(dest))
 
 

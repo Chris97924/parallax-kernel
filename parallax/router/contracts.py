@@ -38,6 +38,10 @@ class QueryRequest:
     since: str | None = None
     until: str | None = None
     level: int = 1
+    # ADR-007: payload-level sub-dispatch for CHANGE_TRACE.
+    # Callers set params={"legacy_kind": "bug"} to route to by_bug_fix;
+    # default None routes to by_decision. Additive, backward-compatible.
+    params: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)

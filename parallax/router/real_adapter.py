@@ -193,6 +193,10 @@ class RealMemoryRouter:
         # Clamp caller-supplied limit to _MAX_QUERY_LIMIT (H-1 hardening).
         capped_limit = min(max(request.limit, 1), _MAX_QUERY_LIMIT)
 
+        # Default retriever name from the static dispatch table; overridden for
+        # CHANGE_TRACE which sub-dispatches via ADR-007 legacy_kind.
+        retriever_name = QUERY_DISPATCH[request.query_type]
+
         if request.query_type is QueryType.RECENT_CONTEXT:
             hits = _retrieve.recent_context(self._conn, user_id=request.user_id, limit=capped_limit)
         elif request.query_type is QueryType.ARTIFACT_CONTEXT:
@@ -204,7 +208,23 @@ class RealMemoryRouter:
                 self._conn, user_id=request.user_id, subject=request.q, limit=capped_limit
             )
         elif request.query_type is QueryType.CHANGE_TRACE:
-            hits = _retrieve.by_decision(self._conn, user_id=request.user_id, limit=capped_limit)
+            # ADR-007: payload-level sub-dispatch.  default -> by_decision.
+            legacy_kind = (request.params or {}).get("legacy_kind")
+            if legacy_kind is None:
+                _log.debug(
+                    "CHANGE_TRACE: legacy_kind absent, defaulting to by_decision",
+                    extra={
+                        "event": "change_trace_legacy_kind_absent",
+                        "user_id": request.user_id,
+                    },
+                )
+            if legacy_kind == "bug":
+                hits = _retrieve.by_bug_fix(self._conn, user_id=request.user_id, limit=capped_limit)
+                retriever_name = "by_bug_fix"
+            else:
+                hits = _retrieve.by_decision(
+                    self._conn, user_id=request.user_id, limit=capped_limit
+                )
         else:  # TEMPORAL_CONTEXT — since/until already validated above
             hits = _retrieve.by_timeline(
                 self._conn,
@@ -213,8 +233,6 @@ class RealMemoryRouter:
                 until=request.until,  # type: ignore[arg-type]
                 limit=capped_limit,
             )
-
-        retriever_name = QUERY_DISPATCH[request.query_type]
 
         hit_dicts = tuple(
             {
@@ -274,10 +292,14 @@ class RealMemoryRouter:
         # silently parse claim aliases on a non-claim payload.
         if request.kind not in ("memory", "claim"):
             raise ValueError(
-                f"unsupported ingest kind {request.kind!r}; " f"expected 'memory' or 'claim'"
+                f"unsupported ingest kind {request.kind!r}; expected 'memory' or 'claim'"
             )
 
         payload = request.payload
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                f"payload must be a Mapping, got {type(payload).__name__!r}"
+            )
 
         if request.kind == "memory":
             body = _first_non_empty(payload, MEMORY_BODY_KEYS, field="memory.body")
@@ -301,12 +323,20 @@ class RealMemoryRouter:
         predicate = _first_non_empty(payload, CLAIM_PREDICATE_KEYS, field="claim.predicate")
         object_ = _first_non_empty(payload, CLAIM_OBJECT_KEYS, field="claim.object_")
         confidence = _coerce_optional_float(payload.get("confidence"), field="claim.confidence")
+        if confidence is not None and not (0.0 <= confidence <= 1.0):
+            raise ValueError(
+                f"claim.confidence must be in [0, 1], got {confidence!r}"
+            )
         # Codex P2: pass caller-supplied state through. Review-workflow
         # callers (e.g. extract layer with low-confidence "pending" claims)
         # would otherwise have their intent silently rewritten to the
         # "auto" default. ingest_claim_with_status validates against
         # CLAIM_TRANSITIONS and raises on unknown values.
         state = payload.get("state", "auto")
+        if not isinstance(state, str):
+            raise ValueError(
+                f"claim.state must be a str, got {type(state).__name__!r}"
+            )
         persisted_id, deduped = ingest_claim_with_status(
             self._conn,
             user_id=request.user_id,

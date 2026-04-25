@@ -1,5 +1,11 @@
 """Crosswalk seed mapping: legacy Intent/RetrieveKind strings -> QueryType (Lane D-1).
 
+Both RetrieveKind.decision and RetrieveKind.bug map to QueryType.CHANGE_TRACE.
+Sub-dispatch within CHANGE_TRACE is disambiguated at the payload level via
+QueryRequest.params["legacy_kind"] (ADR-007-change-trace-bug-kind-dispatch.md):
+  legacy_kind == "bug"  -> parallax.retrieve.by_bug_fix
+  otherwise             -> parallax.retrieve.by_decision (default)
+
 CROSSWALK_SEED is a read-only MappingProxyType. Intent.FALLBACK is intentionally
 absent — resolve() raises UnroutableQueryError when a key is missing.
 """
