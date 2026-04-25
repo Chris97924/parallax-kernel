@@ -282,6 +282,9 @@ class BackfillRunner:
         Used by `parallax router backfill plan` to generate a human-readable diff
         of what `apply` would write.  Each entry has keys:
         canonical_ref, target_kind, target_id, state, query_type.
+
+        No _crosswalk_exists() check needed: this method only reads core tables
+        (claims, memories) and never touches the crosswalk table.
         """
         from parallax.router.crosswalk_seed import UnroutableQueryError, resolve
 
