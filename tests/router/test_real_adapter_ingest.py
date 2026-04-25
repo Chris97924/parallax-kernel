@@ -128,6 +128,30 @@ def test_ingest_memory_lone_surrogate_rejected(conn: sqlite3.Connection) -> None
         router.ingest(IngestRequest(user_id=_USER, kind="memory", payload=payload))
 
 
+def test_ingest_unsupported_kind_raises(conn: sqlite3.Connection) -> None:
+    """Codex P2: an out-of-Literal kind must be rejected explicitly, not
+    silently treated as a claim and written to the claims table.
+
+    ``IngestRequest`` is a plain frozen dataclass; the ``Literal`` type hint
+    is a static-checker hint, not a runtime constraint. Construct with a
+    bypassing kind via ``object.__setattr__`` to simulate an out-of-contract
+    caller (e.g. an unvalidated MCP request body).
+    """
+    router = RealMemoryRouter(conn)
+    req = IngestRequest(user_id=_USER, kind="memory", payload={"body": "x"})
+    object.__setattr__(req, "kind", "bogus")
+    with pytest.raises(ValueError, match=r"unsupported ingest kind"):
+        router.ingest(req)
+    # Must not have left a row in either table.
+    mem_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM memories WHERE user_id = ?", (_USER,)
+    ).fetchone()["n"]
+    claim_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM claims WHERE user_id = ?", (_USER,)
+    ).fetchone()["n"]
+    assert mem_count == 0 and claim_count == 0
+
+
 def test_ingest_memory_missing_vault_path_raises(conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(conn)
     payload = {"body": "x"}  # no vault_path

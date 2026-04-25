@@ -111,6 +111,13 @@ def _derive_body(hit: object) -> str:
     ):
         if not source:
             continue
+        # Codex P1: ``RetrievalHit.evidence`` is ``str | None`` per
+        # parallax/retrieve.py; only Mapping sources can be alias-resolved.
+        # Skip non-Mapping sources rather than letting _first_non_empty
+        # raise AttributeError on payload.get(...) and turning a single
+        # malformed/legacy hit into a hard query failure.
+        if not isinstance(source, Mapping):
+            continue
         try:
             result = _first_non_empty(source, keys, field=f"{kind}.body", default=None)
         except ValueError as exc:
@@ -259,6 +266,16 @@ class RealMemoryRouter:
             _coerce_optional_float,
             _first_non_empty,
         )
+
+        # Codex P2: ``IngestRequest`` is a frozen dataclass; the ``Literal``
+        # type hint is a static-checker hint, not a runtime constraint. An
+        # unvalidated caller (e.g. raw MCP request body) can still pass an
+        # arbitrary string for ``kind``. Reject explicitly so we never
+        # silently parse claim aliases on a non-claim payload.
+        if request.kind not in ("memory", "claim"):
+            raise ValueError(
+                f"unsupported ingest kind {request.kind!r}; " f"expected 'memory' or 'claim'"
+            )
 
         payload = request.payload
 

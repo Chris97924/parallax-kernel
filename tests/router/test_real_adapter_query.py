@@ -168,6 +168,40 @@ def test_dto_body_field_resolves_from_alias_for_claim(
         assert hit["body"], f"claim body should resolve from object/object_ alias; got hit={hit}"
 
 
+def test_derive_body_handles_str_evidence_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P1: ``RetrievalHit.evidence`` is ``str | None``, not a Mapping.
+
+    When ``full`` doesn't resolve and we move on to ``evidence``, the str
+    must NOT be passed into ``_first_non_empty`` (which calls
+    ``payload.get(...)`` on it and raises AttributeError). The right
+    behaviour is to skip non-Mapping sources and fall back to title.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    realistic_hit = SimpleNamespace(
+        entity_kind="claim",
+        entity_id="c-realistic-1",
+        title="alice likes coffee",
+        # full has no recognized alias for the claim path
+        full={"unrelated": "x"},
+        # evidence is the realistic str shape from _claim_to_hit / _event_to_hit
+        evidence="confidence=0.7 state=auto",
+    )
+    # Must not raise; must return title fallback.
+    result = adapter_mod._derive_body(realistic_hit)
+    assert result == "alice likes coffee"
+    # No malformed-value warning either: missing-alias is the legacy-row path.
+    fake_log.warning.assert_not_called()
+
+
 def test_derive_body_legacy_row_no_alias_no_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
