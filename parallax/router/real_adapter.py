@@ -193,6 +193,10 @@ class RealMemoryRouter:
         # Clamp caller-supplied limit to _MAX_QUERY_LIMIT (H-1 hardening).
         capped_limit = min(max(request.limit, 1), _MAX_QUERY_LIMIT)
 
+        # Default retriever name from the static dispatch table; overridden for
+        # CHANGE_TRACE which sub-dispatches via ADR-007 legacy_kind.
+        retriever_name = QUERY_DISPATCH[request.query_type]
+
         if request.query_type is QueryType.RECENT_CONTEXT:
             hits = _retrieve.recent_context(self._conn, user_id=request.user_id, limit=capped_limit)
         elif request.query_type is QueryType.ARTIFACT_CONTEXT:
@@ -204,7 +208,23 @@ class RealMemoryRouter:
                 self._conn, user_id=request.user_id, subject=request.q, limit=capped_limit
             )
         elif request.query_type is QueryType.CHANGE_TRACE:
-            hits = _retrieve.by_decision(self._conn, user_id=request.user_id, limit=capped_limit)
+            # ADR-007: payload-level sub-dispatch.  default -> by_decision.
+            legacy_kind = (request.params or {}).get("legacy_kind")
+            if legacy_kind is None:
+                _log.debug(
+                    "CHANGE_TRACE: legacy_kind absent, defaulting to by_decision",
+                    extra={
+                        "event": "change_trace_legacy_kind_absent",
+                        "user_id": request.user_id,
+                    },
+                )
+            if legacy_kind == "bug":
+                hits = _retrieve.by_bug_fix(self._conn, user_id=request.user_id, limit=capped_limit)
+                retriever_name = "by_bug_fix"
+            else:
+                hits = _retrieve.by_decision(
+                    self._conn, user_id=request.user_id, limit=capped_limit
+                )
         else:  # TEMPORAL_CONTEXT — since/until already validated above
             hits = _retrieve.by_timeline(
                 self._conn,
@@ -213,8 +233,6 @@ class RealMemoryRouter:
                 until=request.until,  # type: ignore[arg-type]
                 limit=capped_limit,
             )
-
-        retriever_name = QUERY_DISPATCH[request.query_type]
 
         hit_dicts = tuple(
             {

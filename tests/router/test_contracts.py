@@ -110,7 +110,8 @@ def test_arbitration_decision_frozen() -> None:
 
 def test_query_request_fields() -> None:
     names = [f.name for f in dataclasses.fields(QueryRequest)]
-    assert names == ["query_type", "user_id", "q", "limit", "since", "until", "level"]
+    # ADR-007: params added as additive optional field (default None)
+    assert names == ["query_type", "user_id", "q", "limit", "since", "until", "level", "params"]
 
 
 def test_ingest_request_fields() -> None:

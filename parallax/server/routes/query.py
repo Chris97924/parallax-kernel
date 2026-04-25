@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from parallax import retrieve as R
 from parallax.injector import build_session_reminder
+from parallax.obs.log import get_logger as _get_logger
+from parallax.obs.metrics import get_counter as _get_counter
 from parallax.router import (
     QueryRequest as RouterQueryRequest,
 )
@@ -41,6 +43,9 @@ router = APIRouter(
     tags=["query"],
     dependencies=[Depends(require_auth)],
 )
+
+_log = _get_logger("parallax.server.routes.query")
+_deprecated_kind_counter = _get_counter("parallax_deprecated_kind_total{kind='bug'}")
 
 
 def _hit_to_dto(hit: R.RetrievalHit, *, level: int) -> RetrievalHitDTO:
@@ -197,6 +202,31 @@ def get_query(
     # attempt if it disagrees). Single-token mode: the query-string value
     # is required, same as before.
     resolved_user_id = current_user_id(request, user_id)
+
+    # ADR-007: kind=bug is deprecated under router-on. Return 410 Gone with
+    # RFC 8594 Deprecation + Sunset headers. Counter tracks caller adoption.
+    if kind == "bug" and is_router_enabled():
+        _log.warning(
+            "deprecated kind called",
+            extra={
+                "event": "deprecated_kind_called",
+                "kind": "bug",
+                "user_id": resolved_user_id,
+            },
+        )
+        _deprecated_kind_counter.inc()
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=(
+                "kind=bug is deprecated under MEMORY_ROUTER=true; "
+                "use CHANGE_TRACE with params.legacy_kind='bug' instead"
+            ),
+            headers={
+                "Deprecation": "true",
+                "Sunset": "Sat, 01 Aug 2026 00:00:00 GMT",
+            },
+        )
+
     if is_router_enabled():
         dtos = _dispatch_with_router(
             conn,

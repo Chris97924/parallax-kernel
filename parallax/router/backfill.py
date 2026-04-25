@@ -1,13 +1,4 @@
-"""BackfillRunner — Lane D-2 read-only enumeration with zero-write invariant proof.
-
-Lane D-3 deferred items (explicit, not silently hidden):
-1. IngestPort.ingest real implementation.
-2. Field normalization layer (memory.body / claim.object_ / event.payload_text
-   canonical unification — Sonnet Critic's flagged tech debt).
-3. ArbitrationDecision CLI view.
-4. diff-audit human review gate.
-5. Server-side flag wiring in parallax/server/routes/query.py.
-"""
+"""BackfillRunner — Lane D-2 read-only enumeration with zero-write invariant proof."""
 
 from __future__ import annotations
 
@@ -280,3 +271,66 @@ class BackfillRunner:
             writes_performed=writes_performed,
             arbitrations=(),
         )
+
+    def plan_upserts(
+        self,
+        user_id: str,
+        scope: str = "sample",
+    ) -> list[dict[str, str | None]]:
+        """Return planned crosswalk upserts without writing, sorted by canonical_ref.
+
+        Used by `parallax router backfill plan` to generate a human-readable diff
+        of what `apply` would write.  Each entry has keys:
+        canonical_ref, target_kind, target_id, state, query_type.
+        """
+        from parallax.router.crosswalk_seed import UnroutableQueryError, resolve
+
+        limit = 50 if scope == "sample" else _MAX_BACKFILL_ROWS
+        planned: list[dict[str, str | None]] = []
+
+        claim_rows = self._conn.execute(
+            "SELECT claim_id, predicate FROM claims WHERE user_id = ?"
+            " ORDER BY created_at DESC, claim_id ASC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+
+        for row in claim_rows:
+            predicate = row["predicate"] if row["predicate"] is not None else ""
+            probe_key = _classify_claim_predicate(predicate)
+            mapped_qt: object = None
+            try:
+                mapped_qt = resolve(probe_key)
+                row_state = MappingState.MAPPED
+            except UnroutableQueryError:
+                row_state = MappingState.UNMAPPED
+            planned.append({
+                "canonical_ref": f"claim:{row['claim_id']}",
+                "target_kind": "claim",
+                "target_id": row["claim_id"],
+                "state": row_state.value,
+                "query_type": mapped_qt.value if mapped_qt is not None else None,
+            })
+
+        memory_rows = self._conn.execute(
+            "SELECT memory_id FROM memories WHERE user_id = ?"
+            " ORDER BY created_at DESC, memory_id ASC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+
+        for row in memory_rows:
+            mapped_qt = None
+            try:
+                mapped_qt = resolve("RetrieveKind.recent")
+                row_state = MappingState.MAPPED
+            except UnroutableQueryError:
+                row_state = MappingState.UNMAPPED
+            planned.append({
+                "canonical_ref": f"memory:{row['memory_id']}",
+                "target_kind": "memory",
+                "target_id": row["memory_id"],
+                "state": row_state.value,
+                "query_type": mapped_qt.value if mapped_qt is not None else None,
+            })
+
+        planned.sort(key=lambda r: r["canonical_ref"] or "")
+        return planned

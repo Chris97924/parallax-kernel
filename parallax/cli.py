@@ -7,6 +7,9 @@ Subcommands:
     parallax inspect events   [--session <id>] [--limit N]
     parallax inspect retrieve "<query>" [--explain] [--level N] [--kind KIND]
     parallax inspect inject   [--session <id>] [--max N]
+    parallax router arbitration [--input PATH | --stdin] [--format pretty|jsonl]
+    parallax router backfill plan  [--user-id ID]
+    parallax router backfill apply [--user-id ID] [--yes]
 
 Reads runtime paths from :func:`parallax.config.load_config` so the same
 ``PARALLAX_DB_PATH`` / ``PARALLAX_VAULT_PATH`` env vars that drive the rest
@@ -26,6 +29,8 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import difflib
+import json
 import os
 import pathlib
 import sys
@@ -196,6 +201,71 @@ def build_parser() -> argparse.ArgumentParser:
     p_tr.add_argument(
         "prefix",
         help="token_hash prefix (>= 6 hex chars); ambiguous matches abort",
+    )
+
+    # ----- router -----------------------------------------------------------
+    p_router = sub.add_parser(
+        "router",
+        help="Router-specific tools: arbitration view, backfill plan/apply.",
+    )
+    rsub = p_router.add_subparsers(dest="router_cmd", metavar="{arbitration,backfill}")
+
+    p_arb = rsub.add_parser(
+        "arbitration",
+        help="Pretty-print or pass through ArbitrationDecision JSONL.",
+    )
+    _arb_input = p_arb.add_mutually_exclusive_group()
+    _arb_input.add_argument(
+        "--input",
+        dest="arb_input",
+        type=pathlib.Path,
+        default=None,
+        metavar="PATH",
+        help="read ArbitrationDecision JSONL from file (default: --stdin)",
+    )
+    _arb_input.add_argument(
+        "--stdin",
+        dest="arb_stdin",
+        action="store_true",
+        help="read ArbitrationDecision JSONL from stdin (default when --input omitted)",
+    )
+    p_arb.add_argument(
+        "--format",
+        dest="arb_format",
+        choices=["pretty", "jsonl"],
+        default="pretty",
+        help="output format: 'pretty' (human-readable) or 'jsonl' (pass-through)",
+    )
+
+    p_backfill = rsub.add_parser(
+        "backfill",
+        help="Backfill plan/apply — see plan and apply subcommands.",
+    )
+    bsub = p_backfill.add_subparsers(dest="backfill_cmd", metavar="{plan,apply}")
+
+    p_bf_plan = bsub.add_parser(
+        "plan",
+        help="Dry-run: show unified diff of planned crosswalk upserts.",
+    )
+    p_bf_plan.add_argument(
+        "--user-id",
+        default=None,
+        help="user_id to scope (default: $PARALLAX_USER_ID or 'chris')",
+    )
+
+    p_bf_apply = bsub.add_parser(
+        "apply",
+        help="Execute crosswalk upserts (requires --yes or stdin CONFIRM).",
+    )
+    p_bf_apply.add_argument(
+        "--user-id",
+        default=None,
+        help="user_id to scope (default: $PARALLAX_USER_ID or 'chris')",
+    )
+    p_bf_apply.add_argument(
+        "--yes",
+        action="store_true",
+        help="skip the stdin CONFIRM gate and proceed immediately",
     )
 
     return parser
@@ -633,6 +703,180 @@ def _cmd_token_revoke(prefix: str) -> int:
     return _EXIT_OK
 
 
+# ----- router: arbitration --------------------------------------------------
+
+
+def _fmt_arbitration_pretty(d: dict) -> str:
+    """Format one ArbitrationDecision JSON dict as a human-readable line."""
+    canonical_ref = d.get("canonical_field", "-")
+    state = d.get("state", "-")
+    candidates = d.get("candidates") or []
+    evidence_count = len(candidates)
+    selected = d.get("selected") or {}
+    source_id = selected.get("source", "-") if isinstance(selected, dict) else "-"
+    # Stable column ordering matches dataclass field order: canonical_field,
+    # state, candidates (evidence_count), selected.source.
+    return (
+        f"canonical_ref={canonical_ref}"
+        f"  decided_state={state}"
+        f"  evidence_count={evidence_count}"
+        f"  source={source_id}"
+    )
+
+
+def _cmd_router_arbitration(
+    *,
+    arb_input: pathlib.Path | None,
+    arb_format: str,
+) -> int:
+    """Stream ArbitrationDecision JSONL from file or stdin and render it."""
+    if arb_input is not None:
+        try:
+            lines: list[str] = arb_input.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            print(f"cannot read {arb_input}: {exc}", file=sys.stderr)
+            return _EXIT_USER_ERROR
+    else:
+        lines = sys.stdin.read().splitlines()
+
+    if not lines:
+        return _EXIT_OK
+
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        if arb_format == "jsonl":
+            print(raw)
+            continue
+        # pretty format
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            print(f"warning: skipping malformed JSONL line: {exc}", file=sys.stderr)
+            continue
+        print(_fmt_arbitration_pretty(d))
+    return _EXIT_OK
+
+
+# ----- router: backfill plan / apply ----------------------------------------
+
+
+def _crosswalk_rows_for_user(conn, user_id: str) -> list[dict]:
+    """Read existing crosswalk rows for a user, sorted by canonical_ref."""
+    rows = conn.execute(
+        "SELECT canonical_ref, parallax_target_kind, parallax_target_id, state, query_type "
+        "FROM crosswalk WHERE user_id = ? ORDER BY canonical_ref ASC",
+        (user_id,),
+    ).fetchall()
+    return [
+        {
+            "canonical_ref": r["canonical_ref"],
+            "target_kind": r["parallax_target_kind"],
+            "target_id": r["parallax_target_id"],
+            "state": r["state"],
+            "query_type": r["query_type"],
+        }
+        for r in rows
+    ]
+
+
+def _fmt_crosswalk_line(row: dict) -> str:
+    qt = row.get("query_type") or "None"
+    return (
+        f"canonical_ref={row['canonical_ref']}"
+        f"  target={row.get('target_kind','-')}:{row.get('target_id','-')}"
+        f"  state={row.get('state','-')}"
+        f"  query_type={qt}"
+    )
+
+
+def _cmd_router_backfill_plan(*, user_id: str) -> int:
+    from parallax.router.backfill import BackfillRunner
+
+    conn = _open_conn()
+    try:
+        before = _crosswalk_rows_for_user(conn, user_id)
+        runner = BackfillRunner(conn)
+        planned = runner.plan_upserts(user_id)
+    finally:
+        conn.close()
+
+    before_lines = [_fmt_crosswalk_line(r) for r in before]
+
+    # Merge planned into current state: update existing rows, append new ones.
+    before_by_ref = {r["canonical_ref"]: r for r in before}
+    after_dict = dict(before_by_ref)
+    for p in planned:
+        after_dict[p["canonical_ref"]] = p
+    after_lines = [
+        _fmt_crosswalk_line(r)
+        for r in sorted(after_dict.values(), key=lambda r: r["canonical_ref"])
+    ]
+
+    diff = list(
+        difflib.unified_diff(
+            before_lines,
+            after_lines,
+            fromfile="crosswalk/current",
+            tofile="crosswalk/planned",
+            lineterm="",
+        )
+    )
+    if not diff:
+        print("(no changes planned)")
+    else:
+        print("\n".join(diff))
+    return _EXIT_OK
+
+
+def _cmd_router_backfill_apply(*, user_id: str, yes: bool) -> int:
+    from parallax.router.backfill import BackfillRunner
+    from parallax.router.contracts import BackfillRequest
+    from parallax.router.crosswalk_seed import seed_hash
+
+    if not yes:
+        print(
+            "Type CONFIRM to execute crosswalk upserts, or anything else to abort:",
+            file=sys.stderr,
+        )
+        try:
+            answer = sys.stdin.readline().strip()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer != "CONFIRM":
+            print(
+                "plan required first; use plan subcommand",
+                file=sys.stderr,
+            )
+            return _EXIT_USER_ERROR
+
+    conn = _open_conn()
+    try:
+        request = BackfillRequest(
+            user_id=user_id,
+            crosswalk_version=seed_hash(),
+            dry_run=False,
+            scope="all",
+        )
+        report = BackfillRunner(conn).run(request)
+        conn.commit()
+    except (ValueError, RuntimeError) as exc:
+        print(f"backfill apply failed: {exc}", file=sys.stderr)
+        conn.close()
+        return _EXIT_USER_ERROR
+    finally:
+        conn.close()
+
+    print(
+        f"backfill complete: examined={report.rows_examined}"
+        f"  mapped={report.rows_mapped}"
+        f"  unmapped={report.rows_unmapped}"
+        f"  writes={report.writes_performed}"
+    )
+    return _EXIT_OK
+
+
 # ----- dispatcher -----------------------------------------------------------
 
 
@@ -655,6 +899,22 @@ def _dispatch(argv: Sequence[str] | None) -> int:
         if args.token_cmd == "revoke":
             return _cmd_token_revoke(args.prefix)
         parser.parse_args(["token", "--help"])
+        return _EXIT_USAGE
+    if args.command == "router":
+        if args.router_cmd == "arbitration":
+            return _cmd_router_arbitration(
+                arb_input=args.arb_input,
+                arb_format=args.arb_format,
+            )
+        if args.router_cmd == "backfill":
+            user_id = args.user_id if args.user_id is not None else _default_user()
+            if args.backfill_cmd == "plan":
+                return _cmd_router_backfill_plan(user_id=user_id)
+            if args.backfill_cmd == "apply":
+                return _cmd_router_backfill_apply(user_id=user_id, yes=args.yes)
+            parser.parse_args(["router", "backfill", "--help"])
+            return _EXIT_USAGE
+        parser.parse_args(["router", "--help"])
         return _EXIT_USAGE
     if args.command == "inspect":
         user_id = args.user_id if args.user_id is not None else _default_user()
