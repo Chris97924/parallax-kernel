@@ -168,6 +168,34 @@ def test_dto_body_field_resolves_from_alias_for_claim(
         assert hit["body"], f"claim body should resolve from object/object_ alias; got hit={hit}"
 
 
+def test_derive_body_legacy_row_no_alias_no_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A legacy row with no recognized body alias must NOT emit a warning.
+
+    Distinguishes "missing alias is normal" from "malformed value is a bug".
+    Otherwise operators see noise on every legacy row and tune the warning out.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    import parallax.router.real_adapter as adapter_mod
+
+    fake_log = MagicMock()
+    monkeypatch.setattr(adapter_mod, "_log", fake_log)
+
+    legacy_hit = SimpleNamespace(
+        entity_kind="memory",
+        entity_id="m-legacy-1",
+        title="legacy-title",
+        full={"unrelated": "x"},  # no recognized alias, no malformed value
+        evidence={"also_unrelated": "y"},
+    )
+    result = adapter_mod._derive_body(legacy_hit)
+    assert result == "legacy-title"
+    fake_log.warning.assert_not_called()
+
+
 def test_derive_body_fallback_emits_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """HIGH-3 fix: when _derive_body falls back due to alias resolution
     failure, emit a structured WARNING so operators can spot post-ingest

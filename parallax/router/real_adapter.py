@@ -78,14 +78,21 @@ def _derive_body(hit: object) -> str:
     xcouncil Round 2): the same ``_first_non_empty`` helper used by
     ``RealMemoryRouter.ingest`` is used here for read-side projection.
 
-    Read-side leniency: ``_first_non_empty`` raises ``ValueError`` on missing
-    or malformed values, but a query that returned hits already passed
-    persistence; falling back to the hit's title preserves consumer
-    contract (``body`` is always a ``str``) without aborting the whole
-    response if a single legacy row lacks a recognized body alias. Any
-    ValueError encountered during alias resolution is logged at WARNING so
-    operators can distinguish "legacy row without recognized alias" from
-    "row whose persisted value is malformed (type mismatch / surrogate)".
+    Read-side semantics:
+
+    * **Missing alias** (legacy row without any recognized body key) — uses
+      ``default=None`` so the helper returns ``None`` silently. We try the
+      next source; if both sources lack the alias we fall back to the hit's
+      title. **No warning** for this branch — legacy rows are an expected
+      population.
+    * **Malformed value** (type mismatch / lone surrogate) — ``ValueError``
+      escapes despite ``default=None``. We catch it, record the reason,
+      and emit a structured WARNING (``event=derive_body_fallback``) so
+      operators can spot post-ingest data corruption.
+
+    The fallback to ``title`` keeps the consumer contract (``body`` is
+    always a ``str``) without aborting the whole response when a single
+    hit is malformed.
     """
     from parallax.router.normalize import _first_non_empty
 
@@ -105,9 +112,13 @@ def _derive_body(hit: object) -> str:
         if not source:
             continue
         try:
-            return _first_non_empty(source, keys, field=f"{kind}.body")
+            result = _first_non_empty(source, keys, field=f"{kind}.body", default=None)
         except ValueError as exc:
             fallback_reasons.append(f"{source_name}: {exc}")
+            continue
+        if result is not None:
+            return result
+        # else: source dict has no recognized alias; not an error, try next.
 
     if fallback_reasons:
         _log.warning(
@@ -203,8 +214,8 @@ class RealMemoryRouter:
                 "id": h.entity_id,
                 "text": h.title,
                 "body": _derive_body(h),
-                "created_at": (h.full or {}).get("created_at", "") if h.full else "",
-                "source_id": (h.full or {}).get("source_id", "") if h.full else "",
+                "created_at": (h.full or {}).get("created_at", ""),
+                "source_id": (h.full or {}).get("source_id", ""),
                 "kind": h.entity_kind,
                 "score": h.score,
                 "evidence": h.evidence,

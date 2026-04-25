@@ -20,6 +20,19 @@ from parallax.router.real_adapter import RealMemoryRouter
 
 _USER = "test_user_d3_02"
 
+# Per-test seed counts. Named so a future schema change to memory/claim
+# row layout doesn't leave bare integer assertions to grep.
+_DRY_RUN_MEMORY_ROWS = 5
+_DRY_RUN_CLAIM_ROWS = 5
+_DRY_RUN_TOTAL_ROWS = _DRY_RUN_MEMORY_ROWS + _DRY_RUN_CLAIM_ROWS
+
+_REAL_RUN_MEMORY_ROWS = 3
+_REAL_RUN_CLAIM_ROWS = 3
+_REAL_RUN_TOTAL_ROWS = _REAL_RUN_MEMORY_ROWS + _REAL_RUN_CLAIM_ROWS
+
+# Cross the >=1k threshold for the EXPLAIN QUERY PLAN test (PRD addendum).
+_INDEX_SELECTIVITY_ROWS = 1100
+
 
 def _ingest_one_memory(router: RealMemoryRouter, *, idx: int) -> None:
     router.ingest(
@@ -60,38 +73,40 @@ def test_backfill_returns_backfill_report(conn: sqlite3.Connection) -> None:
 
 def test_backfill_dry_run_writes_zero(conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(conn)
-    for i in range(5):
+    for i in range(_DRY_RUN_MEMORY_ROWS):
         _ingest_one_memory(router, idx=i)
+    for i in range(_DRY_RUN_CLAIM_ROWS):
         _ingest_one_claim(router, idx=i)
 
     report = router.backfill(
         BackfillRequest(user_id=_USER, crosswalk_version="v1", dry_run=True, scope="sample")
     )
     assert report.writes_performed == 0
-    assert report.rows_examined == 10
+    assert report.rows_examined == _DRY_RUN_TOTAL_ROWS
 
 
 def test_backfill_real_run_persists_to_crosswalk(conn: sqlite3.Connection) -> None:
     router = RealMemoryRouter(conn)
-    for i in range(3):
+    for i in range(_REAL_RUN_MEMORY_ROWS):
         _ingest_one_memory(router, idx=i)
+    for i in range(_REAL_RUN_CLAIM_ROWS):
         _ingest_one_claim(router, idx=i)
 
     report = router.backfill(
         BackfillRequest(user_id=_USER, crosswalk_version="v1", dry_run=False, scope="sample")
     )
-    assert report.writes_performed == 6
+    assert report.writes_performed == _REAL_RUN_TOTAL_ROWS
     crosswalk_count = conn.execute(
         "SELECT COUNT(*) AS n FROM crosswalk WHERE user_id = ?", (_USER,)
     ).fetchone()["n"]
-    assert crosswalk_count == 6
+    assert crosswalk_count == _REAL_RUN_TOTAL_ROWS
 
 
 def test_backfill_index_selectivity_user_state(conn: sqlite3.Connection) -> None:
     """ADDENDUM: EXPLAIN QUERY PLAN confirms idx_crosswalk_user_state usage."""
     router = RealMemoryRouter(conn)
-    # Use scope='all' (cap 10_000) and 1100 rows to cross the >=1k threshold.
-    for i in range(1100):
+    # scope='all' (cap 10_000) and 1100 rows crosses the >=1k threshold.
+    for i in range(_INDEX_SELECTIVITY_ROWS):
         _ingest_one_memory(router, idx=i)
 
     router.backfill(

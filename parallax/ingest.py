@@ -16,6 +16,7 @@ from __future__ import annotations
 import dataclasses
 import sqlite3
 import time
+from typing import Literal
 
 from ulid import ULID
 
@@ -203,7 +204,7 @@ def ingest_claim(
     object_: str,
     source_id: str | None = None,
     confidence: float | None = None,
-    state: str = "auto",
+    state: Literal["auto", "pending", "confirmed", "rejected"] = "auto",
 ) -> str:
     """UPSERT a claim row. Returns the persisted claim_id.
 
@@ -233,7 +234,7 @@ def ingest_claim_with_status(
     object_: str,
     source_id: str | None = None,
     confidence: float | None = None,
-    state: str = "auto",
+    state: Literal["auto", "pending", "confirmed", "rejected"] = "auto",
 ) -> tuple[str, bool]:
     """UPSERT a claim row. Returns ``(persisted_claim_id, deduped)``.
 
