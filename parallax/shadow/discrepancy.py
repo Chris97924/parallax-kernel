@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from parallax.router.shadow import SCHEMA_VERSION
+from parallax.router.shadow import SCHEMA_VERSION, ShadowDecisionLog
 
 __all__ = [
     "CHECKSUM_CONSISTENCY_THRESHOLD",
@@ -37,6 +37,7 @@ __all__ = [
     "checksum_consistency",
     "compute_checksum_chain",
     "discrepancy_rate",
+    "is_record_consistent",
     "load_records",
     "parse_window",
 ]
@@ -45,19 +46,10 @@ __all__ = [
 DISCREPANCY_RATE_THRESHOLD = 0.003
 CHECKSUM_CONSISTENCY_THRESHOLD = 0.999
 
-_NINE_FIELDS = frozenset(
-    {
-        "arbitration_outcome",
-        "correlation_id",
-        "crosswalk_status",
-        "latency_ms",
-        "query_type",
-        "schema_version",
-        "selected_port",
-        "timestamp",
-        "user_id",
-    }
-)
+# Derived from the canonical ShadowDecisionLog dataclass so a future field add
+# in parallax.router.shadow propagates here automatically. The drift guard test
+# in tests/shadow/test_discrepancy.py asserts the count and member set.
+_CANONICAL_FIELDS: frozenset[str] = frozenset(f.name for f in dataclasses.fields(ShadowDecisionLog))
 
 # Default mirrors parallax.config._DEFAULT_SHADOW_LOG_DIR. Computed here from
 # __file__ instead of imported to avoid a parallax.config dependency in this
@@ -274,16 +266,18 @@ def discrepancy_rate(
 # ---------------------------------------------------------------------------
 
 
-def _is_consistent(record: dict[str, Any], raw_line: str) -> bool:
+def is_record_consistent(record: dict[str, Any], raw_line: str) -> bool:
     """A record is consistent iff:
 
-    * exactly the 9 canonical fields are present (no missing, no extra),
+    * exactly the canonical fields are present (no missing, no extra) — the
+      set is derived from :class:`parallax.router.shadow.ShadowDecisionLog`
+      so a future field add propagates here automatically,
     * ``schema_version`` matches the locked major version (forward-compat
       within the ``1.x`` series; ``2.0`` would correctly fail),
     * ``json.dumps(record, sort_keys=True)`` reproduces the on-disk line —
       protects the deterministic-checksum guarantee documented in the runbook.
     """
-    if set(record.keys()) != _NINE_FIELDS:
+    if set(record.keys()) != _CANONICAL_FIELDS:
         return False
     sv = record.get("schema_version")
     if not isinstance(sv, str) or not sv.startswith(_SCHEMA_VERSION_PREFIX):
@@ -318,7 +312,7 @@ def checksum_consistency(
     consistent = sum(
         1
         for record, raw in zip(result.records, result.raw_lines, strict=True)
-        if _is_consistent(record, raw)
+        if is_record_consistent(record, raw)
     )
     return consistent / total
 

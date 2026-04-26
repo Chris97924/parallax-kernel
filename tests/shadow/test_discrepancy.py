@@ -19,7 +19,6 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -33,43 +32,10 @@ from parallax.shadow.discrepancy import (
     load_records,
     parse_window,
 )
+from tests.shadow.conftest import make_record as _record
+from tests.shadow.conftest import write_records as _write_records
 
 UTC = dt.UTC
-
-
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
-
-
-def _record(
-    arbitration_outcome: str = "match",
-    timestamp: str | None = None,
-    **overrides: Any,
-) -> dict[str, Any]:
-    """Build a 9-field shadow decision record."""
-    base = {
-        "arbitration_outcome": arbitration_outcome,
-        "correlation_id": "cid-1",
-        "crosswalk_status": "ok",
-        "latency_ms": 1.0,
-        "query_type": "recent_context",
-        "schema_version": SCHEMA_VERSION,
-        "selected_port": "QueryPort",
-        "timestamp": timestamp or "2026-04-26T10:00:00.000000+00:00",
-        "user_id": "alice",
-    }
-    base.update(overrides)
-    return base
-
-
-def _write_records(log_dir: Path, records: list[dict], date: str = "2026-04-26") -> Path:
-    """Append records to ``shadow-decisions-{date}.jsonl`` with deterministic JSONL form."""
-    path = log_dir / f"shadow-decisions-{date}.jsonl"
-    with path.open("a", encoding="utf-8") as fh:
-        for r in records:
-            fh.write(json.dumps(r, sort_keys=True) + "\n")
-    return path
 
 
 def _now(s: str) -> dt.datetime:
@@ -571,3 +537,40 @@ def test_default_log_dir_matches_config(monkeypatch: pytest.MonkeyPatch) -> None
         monkeypatch.delenv(key, raising=False)
     cfg = load_config()
     assert _DEFAULT_LOG_DIR.resolve() == cfg.shadow_log_dir
+
+
+def test_canonical_fields_derived_from_dataclass() -> None:
+    """Drift guard: _CANONICAL_FIELDS must mirror ShadowDecisionLog dataclass.
+
+    If parallax.router.shadow.ShadowDecisionLog gains a 10th field, this
+    test still passes (set is derived). It pins the count and member set so
+    hand-edited copies in code or tests can't silently drift.
+    """
+    import dataclasses
+
+    from parallax.router.shadow import ShadowDecisionLog
+    from parallax.shadow.discrepancy import _CANONICAL_FIELDS
+
+    expected = frozenset(f.name for f in dataclasses.fields(ShadowDecisionLog))
+    assert _CANONICAL_FIELDS == expected
+    # As of v1.0 the contract is exactly 9 fields. A schema bump should also
+    # bump SCHEMA_VERSION; this assertion catches a silent field add.
+    assert len(_CANONICAL_FIELDS) == 9
+
+
+def test_is_record_consistent_public_predicate() -> None:
+    """`is_record_consistent` is the public predicate metrics.py reuses."""
+    from parallax.shadow.discrepancy import is_record_consistent
+
+    record = _record(timestamp="2026-04-26T11:00:00.000000+00:00")
+    raw = json.dumps(record, sort_keys=True)
+    assert is_record_consistent(record, raw) is True
+
+    # Missing field
+    bad = dict(record)
+    bad.pop("user_id")
+    raw_bad = json.dumps(bad, sort_keys=True)
+    assert is_record_consistent(bad, raw_bad) is False
+
+    # Mutated raw line that doesn't round-trip
+    assert is_record_consistent(record, raw + " ") is False

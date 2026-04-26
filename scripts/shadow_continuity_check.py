@@ -24,6 +24,7 @@ import datetime as _dt
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 # Add repo root to sys.path so this script is runnable without installation.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,7 +107,7 @@ def _parse_now(raw: str | None) -> _dt.datetime | None:
     return parsed
 
 
-def _build_report(args: argparse.Namespace) -> dict:
+def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     now = _parse_now(args.now)
     delta = parse_window(args.since)
     log_dir = Path(args.log_dir) if args.log_dir else None

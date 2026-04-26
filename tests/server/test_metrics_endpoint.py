@@ -14,14 +14,14 @@ Contract:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from parallax.server.app import create_app
+from tests.shadow.conftest import make_record as _record
+from tests.shadow.conftest import write_records as _write
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -42,33 +42,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     app = create_app()
     return TestClient(app)
-
-
-def _record(
-    arbitration_outcome: str = "match",
-    timestamp: str = "2026-04-26T11:00:00.000000+00:00",
-    **overrides: Any,
-) -> dict[str, Any]:
-    base = {
-        "arbitration_outcome": arbitration_outcome,
-        "correlation_id": "cid-1",
-        "crosswalk_status": "ok",
-        "latency_ms": 1.0,
-        "query_type": "recent_context",
-        "schema_version": "1.0",
-        "selected_port": "QueryPort",
-        "timestamp": timestamp,
-        "user_id": "alice",
-    }
-    base.update(overrides)
-    return base
-
-
-def _write(log_dir: Path, records: list[dict], date: str = "2026-04-26") -> None:
-    path = log_dir / f"shadow-decisions-{date}.jsonl"
-    with path.open("a", encoding="utf-8") as fh:
-        for r in records:
-            fh.write(json.dumps(r, sort_keys=True) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -207,3 +180,56 @@ def test_metrics_caches_within_ttl(
             assert value == 1, f"cache miss — saw {value} (expected cached 1)"
             return
     pytest.fail("missing parallax_shadow_log_records_total metric line")
+
+
+# ---------------------------------------------------------------------------
+# Drift guard: collapsed _collect_shadow_metrics must match public API
+# ---------------------------------------------------------------------------
+
+
+def test_metrics_collapsed_walk_matches_public_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``_collect_shadow_metrics`` re-implements the public API for perf — semantics must match.
+
+    This test pins the perf-collapsing optimization: if the metrics endpoint's
+    in-memory aggregation drifts from ``discrepancy_rate()`` /
+    ``checksum_consistency()``, scrapes silently report wrong numbers.
+    """
+    import datetime as dt
+
+    from parallax.server.routes import metrics as metrics_route
+    from parallax.shadow.discrepancy import (
+        checksum_consistency,
+        discrepancy_rate,
+    )
+
+    log_dir = tmp_path / "shadow"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(log_dir))
+
+    now = dt.datetime.now(dt.UTC)
+    fresh = now.isoformat(timespec="microseconds")
+    _write(
+        log_dir,
+        [
+            _record(arbitration_outcome="match", timestamp=fresh),
+            _record(arbitration_outcome="diverge", timestamp=fresh),
+            _record(arbitration_outcome="match", timestamp=fresh),
+        ],
+        date=now.strftime("%Y-%m-%d"),
+    )
+    # Also append one malformed line so checksum_consistency drops below 1.0.
+    path = log_dir / f"shadow-decisions-{now.strftime('%Y-%m-%d')}.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("garbage\n")
+
+    metrics_route._reset_cache_for_tests()
+    collapsed = metrics_route._collect_shadow_metrics()
+
+    public_discrepancy = discrepancy_rate(window="1h")
+    public_consistency = checksum_consistency(window="1h")
+
+    assert collapsed["discrepancy_rate"] == pytest.approx(public_discrepancy)
+    assert collapsed["checksum_consistency"] == pytest.approx(public_consistency)
+    assert collapsed["log_records_total"] == 3.0  # 3 parsed records

@@ -96,6 +96,8 @@ python scripts/shadow_continuity_check.py --since=72h --min-records=1 --format=h
 
 The CLI reports record count, malformed lines, divergent records, `discrepancy_rate`, `checksum_consistency`, and a SHA-256 chain hash over the deterministic JSONL stream. Pass `--format=json` for machine-readable output. Use `--min-records=N` to assert against an expected lower bound (zero-log-loss guard — the runbook's "0 records means writer is broken" check).
 
+> **Caveat — UTC midnight boundary on malformed-line counting.** Malformed lines have no timestamp, so window-filtering uses the source file's UTC date: a malformed line is included iff its file's date is `>= cutoff.date()`. Around UTC midnight (e.g. running `--since=1h` at `00:30 UTC`), all malformed lines from the previous day's file are included even if they were actually written 23+ hours earlier. This is a conservative bias — over-counts malformed lines, never under-counts — so `checksum_consistency` is a lower bound during the first ~1 hour after each UTC midnight rollover. For 72h DoD checks (`--since=72h`) the noise is amortized away. Tighten with `--since=72h` or run from `01:00 UTC` onward to avoid the boundary.
+
 ### Per-metric verification
 ```bash
 # 1. Zero log loss — chain hash + record count
