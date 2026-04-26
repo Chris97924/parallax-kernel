@@ -231,6 +231,150 @@ class TestHealthAuthReturnsFullPayload:
 
 
 # ---------------------------------------------------------------------------
+# H-2 regression: invalid bearer must not bypass health redaction
+# ---------------------------------------------------------------------------
+
+
+class TestHealthInvalidBearerRedacted:
+    """P1 regression: any non-None credentials must be validated, not just present."""
+
+    def test_garbage_bearer_returns_ok_only(
+        self, db_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PARALLAX_TOKEN", "real-secret")
+        monkeypatch.setenv("PARALLAX_DB_PATH", str(db_path))
+
+        def factory() -> sqlite3.Connection:
+            return connect(db_path)
+
+        app = create_app(db_factory=factory)
+        with TestClient(app) as c:
+            resp = c.get(
+                "/inspect/health",
+                headers={"Authorization": "Bearer garbage-not-the-real-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "status" in body
+        assert "table_counts" not in body
+        assert "journal_mode" not in body
+
+    def test_correct_bearer_returns_full_payload(
+        self, db_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PARALLAX_TOKEN", "real-secret")
+        monkeypatch.setenv("PARALLAX_DB_PATH", str(db_path))
+
+        def factory() -> sqlite3.Connection:
+            return connect(db_path)
+
+        app = create_app(db_factory=factory)
+        with TestClient(app) as c:
+            resp = c.get(
+                "/inspect/health",
+                headers={"Authorization": "Bearer real-secret"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "status" in body
+        assert "table_counts" in body
+        assert "journal_mode" in body
+
+
+# ---------------------------------------------------------------------------
+# H-2 multi-user mode: health redaction must apply when PARALLAX_MULTI_USER=1
+# ---------------------------------------------------------------------------
+
+
+class TestHealthMultiUserRedaction:
+    """Multi-user mode (no PARALLAX_TOKEN) must still gate the full payload."""
+
+    @pytest.fixture()
+    def mu_db_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        from parallax.migrations import migrate_to_latest
+        from parallax.sqlite_store import connect as _connect
+
+        p = tmp_path / "mu_health.db"
+        c = _connect(p)
+        try:
+            migrate_to_latest(c)
+        finally:
+            c.close()
+        return p
+
+    def _make_app(
+        self,
+        mu_db_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        monkeypatch.setenv("PARALLAX_MULTI_USER", "1")
+        monkeypatch.delenv("PARALLAX_TOKEN", raising=False)
+        monkeypatch.setenv("PARALLAX_DB_PATH", str(mu_db_path))
+
+        def factory() -> sqlite3.Connection:
+            return connect(mu_db_path)
+
+        return create_app(db_factory=factory)
+
+    def test_no_bearer_returns_ok_only(
+        self,
+        mu_db_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        app = self._make_app(mu_db_path, monkeypatch)
+        with TestClient(app) as cl:
+            resp = cl.get("/inspect/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" not in body
+
+    def test_invalid_bearer_returns_ok_only(
+        self,
+        mu_db_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        app = self._make_app(mu_db_path, monkeypatch)
+        with TestClient(app) as cl:
+            resp = cl.get(
+                "/inspect/health",
+                headers={"Authorization": "Bearer not-a-real-mu-token"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" not in body
+
+    def test_valid_bearer_returns_full_payload(
+        self,
+        mu_db_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import secrets
+
+        from parallax.server.auth import hash_token
+        from parallax.sqlite_store import connect as _connect, now_iso
+
+        plaintext = secrets.token_urlsafe(24)
+        c = _connect(mu_db_path)
+        c.execute(
+            "INSERT INTO api_tokens(token_hash, user_id, created_at, revoked_at, label)"
+            " VALUES (?, ?, ?, NULL, NULL)",
+            (hash_token(plaintext), "u1", now_iso()),
+        )
+        c.commit()
+        c.close()
+        app = self._make_app(mu_db_path, monkeypatch)
+        with TestClient(app) as cl:
+            resp = cl.get(
+                "/inspect/health",
+                headers={"Authorization": f"Bearer {plaintext}"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "table_counts" in body
+        assert "journal_mode" in body
+
+
+# ---------------------------------------------------------------------------
 # Content hash byte-equality across router-on / router-off
 # ---------------------------------------------------------------------------
 

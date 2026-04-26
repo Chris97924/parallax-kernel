@@ -22,17 +22,19 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from parallax.introspection import parallax_info
 from parallax.router import RealMemoryRouter, is_router_enabled
-from parallax.server.auth import require_auth
+from parallax.server.auth import auth_configured, multi_user_mode, require_auth
 from parallax.server.deps import get_conn
 from parallax.server.schemas import HealthOkResponse, HealthResponse, InspectResponse
 from parallax.telemetry import health as telemetry_health
 
 _optional_bearer = HTTPBearer(auto_error=False)
+_CONN_DEP = Depends(get_conn)
+_OPTIONAL_BEARER_DEP = Depends(_optional_bearer)
 
 router = APIRouter(
     prefix="/inspect",
@@ -93,23 +95,24 @@ def _build_health_with_router(conn: sqlite3.Connection) -> HealthResponse:
 @router.get("/health", response_model=None)
 def get_health(
     request: Request,
-    conn: sqlite3.Connection = Depends(get_conn),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+    conn: sqlite3.Connection = _CONN_DEP,
+    credentials: HTTPAuthorizationCredentials | None = _OPTIONAL_BEARER_DEP,
 ) -> HealthResponse | HealthOkResponse:
     health = _build_health_with_router(conn)
-    # H-2: unauthenticated callers get ok-only payload when auth is configured.
-    # In open mode (no PARALLAX_TOKEN), full response is returned to all callers
-    # since there is no security model — bearer auth is not meaningful.
-    from parallax.server.auth import auth_configured
-
-    if auth_configured() and credentials is None:
-        return HealthOkResponse(status=health.status)
+    # H-2: redact full payload when auth is required but caller is not authenticated.
+    # Covers single-token mode (PARALLAX_TOKEN) and multi-user mode. Open mode
+    # (neither env var set) returns the full payload to all callers.
+    if auth_configured() or multi_user_mode():
+        try:
+            require_auth(request, credentials, conn)
+        except HTTPException:
+            return HealthOkResponse(status=health.status)
     return health
 
 
 @router.get("/info", response_model=InspectResponse, dependencies=[Depends(require_auth)])
 def get_info(
-    conn: sqlite3.Connection = Depends(get_conn),
+    conn: sqlite3.Connection = _CONN_DEP,
 ) -> InspectResponse:
     db_path = _db_path_from_conn(conn)
     info = parallax_info(db_path)
