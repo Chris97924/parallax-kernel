@@ -1,14 +1,16 @@
 """Lane C US-006 — Shadow Mode interceptor TDD coverage.
 
-The interceptor wraps a canonical router and computes a shadow decision
-without mutating the canonical result. These tests cover the public
-contract: bypass logic, log schema, divergence capture, latency, and
-correlation-id propagation.
+Covers: schema contract (9 fields), bypass logic, divergence capture,
+latency / correlation_id propagation, FP-drift score tolerance, UTC daily
+rotation, and one-time mkdir at construction (perf invariant).
 """
 
 from __future__ import annotations
 
 import json
+import pathlib
+import re
+import time
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import MagicMock
@@ -17,7 +19,7 @@ import pytest
 
 from parallax.retrieval.contracts import RetrievalEvidence
 from parallax.router.contracts import QueryRequest
-from parallax.router.shadow import ShadowDecisionLog, ShadowInterceptor
+from parallax.router.shadow import SCHEMA_VERSION, ShadowDecisionLog, ShadowInterceptor
 from parallax.router.types import QueryType
 
 # ---------------------------------------------------------------------------
@@ -27,11 +29,7 @@ from parallax.router.types import QueryType
 
 @dataclass
 class _FakeRouter:
-    """Stub router that returns whatever evidence the test sets up.
-
-    Records calls so tests can assert query() was invoked exactly once
-    (or not at all in bypass cases).
-    """
+    """Stub router that returns whatever evidence the test sets up."""
 
     evidence: RetrievalEvidence
     calls: list[QueryRequest]
@@ -41,10 +39,22 @@ class _FakeRouter:
         return self.evidence
 
 
-def _make_evidence(*hit_ids: str) -> RetrievalEvidence:
+def _make_evidence(*hit_ids: str, score: float = 0.9) -> RetrievalEvidence:
     return RetrievalEvidence(
         hits=tuple(
-            {"id": hid, "kind": "memory", "score": 0.9, "body": "", "text": hid} for hid in hit_ids
+            {"id": hid, "kind": "memory", "score": score, "body": "", "text": hid}
+            for hid in hit_ids
+        ),
+        stages=("test_stage",),
+    )
+
+
+def _make_evidence_with_scores(*pairs: tuple[str, float]) -> RetrievalEvidence:
+    """pairs: each (hit_id, score)."""
+    return RetrievalEvidence(
+        hits=tuple(
+            {"id": hid, "kind": "memory", "score": score, "body": "", "text": hid}
+            for hid, score in pairs
         ),
         stages=("test_stage",),
     )
@@ -71,13 +81,26 @@ def _read_log_lines(log_dir) -> list[dict]:
     return lines
 
 
+_NINE_FIELDS = {
+    "query_type",
+    "selected_port",
+    "crosswalk_status",
+    "arbitration_outcome",
+    "latency_ms",
+    "correlation_id",
+    "timestamp",
+    "user_id",
+    "schema_version",
+}
+
+
 # ---------------------------------------------------------------------------
 # Schema contract
 # ---------------------------------------------------------------------------
 
 
-def test_decision_log_has_six_canonical_fields() -> None:
-    """ShadowDecisionLog exposes the exact 6 fields named in the M2 spec."""
+def test_decision_log_has_nine_canonical_fields() -> None:
+    """ShadowDecisionLog exposes exactly 9 fields after WS-3 schema extension."""
     log = ShadowDecisionLog(
         query_type="recent_context",
         selected_port="QueryPort",
@@ -85,16 +108,11 @@ def test_decision_log_has_six_canonical_fields() -> None:
         arbitration_outcome="match",
         latency_ms=1.0,
         correlation_id="abc",
+        timestamp="2026-04-26T10:30:45.123456+00:00",
+        user_id="user1",
     )
     payload = json.loads(log.to_jsonl())
-    assert set(payload.keys()) == {
-        "query_type",
-        "selected_port",
-        "crosswalk_status",
-        "arbitration_outcome",
-        "latency_ms",
-        "correlation_id",
-    }
+    assert set(payload.keys()) == _NINE_FIELDS
 
 
 def test_decision_log_jsonl_has_sorted_keys() -> None:
@@ -106,10 +124,49 @@ def test_decision_log_jsonl_has_sorted_keys() -> None:
         arbitration_outcome="match",
         latency_ms=1.0,
         correlation_id="abc",
+        timestamp="2026-04-26T10:30:45.123456+00:00",
+        user_id="user1",
     )
     line = log.to_jsonl()
-    # Round-trip parse + re-dump with sort_keys must equal the original line.
     assert json.dumps(json.loads(line), sort_keys=True) == line
+
+
+def test_decision_log_default_schema_version_is_one_zero() -> None:
+    """schema_version defaults to '1.0' so callers do not have to set it."""
+    log = ShadowDecisionLog(
+        query_type="recent_context",
+        selected_port="QueryPort",
+        crosswalk_status="ok",
+        arbitration_outcome="match",
+        latency_ms=1.0,
+        correlation_id="abc",
+        timestamp="2026-04-26T10:30:45.123456+00:00",
+        user_id="user1",
+    )
+    assert log.schema_version == "1.0"
+    assert SCHEMA_VERSION == "1.0"
+
+
+def test_interceptor_populates_timestamp_user_id_schema_version(
+    monkeypatch, shadow_log_dir
+) -> None:
+    """All 3 new schema fields land in the JSONL via the interceptor path."""
+    monkeypatch.setenv("SHADOW_MODE", "true")
+    monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "alice")
+    canonical = _FakeRouter(_make_evidence("hit-1"), [])
+    shadow = _FakeRouter(_make_evidence("hit-1"), [])
+    interceptor = ShadowInterceptor(canonical, lambda: shadow)
+    interceptor.query(_make_request(user_id="alice"))
+
+    lines = _read_log_lines(shadow_log_dir)
+    assert len(lines) == 1
+    payload = lines[0]
+
+    assert set(payload.keys()) == _NINE_FIELDS
+    assert payload["user_id"] == "alice"
+    assert payload["schema_version"] == "1.0"
+    iso_pat = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00$"
+    assert re.match(iso_pat, payload["timestamp"]), payload["timestamp"]
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +258,6 @@ def test_divergence_captured_no_propagation(monkeypatch, shadow_log_dir) -> None
 
     result = interceptor.query(_make_request())
 
-    # Caller MUST receive canonical, not shadow
     assert result is canonical_evidence
     assert result.hits[0]["id"] == "canonical-hit"
 
@@ -220,7 +276,7 @@ def test_shadow_exception_does_not_break_canonical(monkeypatch, shadow_log_dir) 
         raise RuntimeError("boom")
 
     interceptor = ShadowInterceptor(canonical, _broken_shadow_factory)
-    result = interceptor.query(_make_request())  # must not raise
+    result = interceptor.query(_make_request())
 
     assert result is canonical.evidence
     lines = _read_log_lines(shadow_log_dir)
@@ -241,7 +297,7 @@ def test_latency_recorded(monkeypatch, shadow_log_dir) -> None:
 
     lines = _read_log_lines(shadow_log_dir)
     assert lines[0]["latency_ms"] >= 0.0
-    assert lines[0]["latency_ms"] < 1000.0  # in-memory test should be sub-second
+    assert lines[0]["latency_ms"] < 1000.0
 
 
 def test_correlation_id_propagation(monkeypatch, shadow_log_dir) -> None:
@@ -270,4 +326,91 @@ def test_correlation_id_auto_generated_when_absent(monkeypatch, shadow_log_dir) 
 
     lines = _read_log_lines(shadow_log_dir)
     assert isinstance(lines[0]["correlation_id"], str)
-    assert len(lines[0]["correlation_id"]) >= 8  # uuid4 hex is 32 chars; format may include dashes
+    assert len(lines[0]["correlation_id"]) >= 8
+
+
+# ---------------------------------------------------------------------------
+# FP-drift score tolerance (architect finding)
+# ---------------------------------------------------------------------------
+
+
+def test_hits_equal_treats_isclose_scores_as_match(monkeypatch, shadow_log_dir) -> None:
+    """Score FP-drift within rel_tol=1e-6 must be marked match, not diverge."""
+    monkeypatch.setenv("SHADOW_MODE", "true")
+    monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "user1")
+    # 0.9 and 0.9 + 5e-7 differ by ~5.5e-7 relative — well inside 1e-6 tolerance.
+    canonical = _FakeRouter(_make_evidence_with_scores(("hit-1", 0.9)), [])
+    shadow_router = _FakeRouter(_make_evidence_with_scores(("hit-1", 0.9 + 5e-7)), [])
+    interceptor = ShadowInterceptor(canonical, lambda: shadow_router)
+
+    interceptor.query(_make_request())
+
+    lines = _read_log_lines(shadow_log_dir)
+    assert lines[0]["arbitration_outcome"] == "match"
+
+
+def test_hits_equal_meaningful_score_drift_still_diverges(monkeypatch, shadow_log_dir) -> None:
+    """Score divergence above rel_tol must still surface as diverge."""
+    monkeypatch.setenv("SHADOW_MODE", "true")
+    monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "user1")
+    canonical = _FakeRouter(_make_evidence_with_scores(("hit-1", 0.9)), [])
+    shadow_router = _FakeRouter(_make_evidence_with_scores(("hit-1", 0.8)), [])
+    interceptor = ShadowInterceptor(canonical, lambda: shadow_router)
+
+    interceptor.query(_make_request())
+
+    lines = _read_log_lines(shadow_log_dir)
+    assert lines[0]["arbitration_outcome"] == "diverge"
+
+
+# ---------------------------------------------------------------------------
+# UTC daily rotation + mkdir cached at __init__
+# ---------------------------------------------------------------------------
+
+
+def test_log_filename_uses_utc_date(monkeypatch, tmp_path) -> None:
+    """Daily file rotation uses UTC date, not local time."""
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("SHADOW_MODE", "true")
+    monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "user1")
+
+    fake_struct = time.struct_time((2026, 4, 26, 12, 0, 0, 5, 116, 0))
+    monkeypatch.setattr(time, "gmtime", lambda *a, **k: fake_struct)
+
+    canonical = _FakeRouter(_make_evidence("hit-1"), [])
+    shadow_router = _FakeRouter(_make_evidence("hit-1"), [])
+    interceptor = ShadowInterceptor(canonical, lambda: shadow_router)
+    interceptor.query(_make_request())
+
+    expected = tmp_path / "shadow-decisions-2026-04-26.jsonl"
+    assert expected.exists(), f"expected {expected}, got {list(tmp_path.iterdir())}"
+
+
+def test_log_dir_mkdir_called_only_at_init(monkeypatch, tmp_path) -> None:
+    """Path.mkdir is called once at __init__, not on every query() call."""
+    log_dir = tmp_path / "shadow"
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(log_dir))
+    monkeypatch.setenv("SHADOW_MODE", "true")
+    monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "user1")
+
+    original_mkdir = pathlib.Path.mkdir
+    call_count = {"n": 0}
+
+    def counting_mkdir(self, *args, **kwargs):
+        call_count["n"] += 1
+        return original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", counting_mkdir)
+
+    canonical = _FakeRouter(_make_evidence("hit-1"), [])
+    shadow_router = _FakeRouter(_make_evidence("hit-1"), [])
+    interceptor = ShadowInterceptor(canonical, lambda: shadow_router)
+    init_count = call_count["n"]
+    assert init_count >= 1, "expected mkdir during __init__"
+
+    for _ in range(3):
+        interceptor.query(_make_request())
+
+    assert (
+        call_count["n"] == init_count
+    ), f"mkdir called {call_count['n'] - init_count} extra times across 3 queries"
