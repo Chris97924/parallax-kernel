@@ -129,11 +129,17 @@ class _WALQueue:
             eviction_cutoff = (
                 datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_DEAD_ROW_TTL_DAYS)
             ).isoformat(timespec="microseconds")
-            conn.execute(
+            cursor = conn.execute(
                 "DELETE FROM wal_queue WHERE attempts >= 5 AND created_at < ?",
                 (eviction_cutoff,),
             )
+            evicted = cursor.rowcount
             conn.commit()
+            if evicted > 0:
+                _log_debug(
+                    f"WAL evicted {evicted} dead rows "
+                    f"(attempts>=5, older than {_DEAD_ROW_TTL_DAYS} days)"
+                )
 
             rows = conn.execute(
                 "SELECT seq, endpoint, payload, user_id, token, attempts"

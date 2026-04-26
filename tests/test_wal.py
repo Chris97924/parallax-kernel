@@ -208,3 +208,43 @@ def test_dead_row_eviction(tmp_path):
     assert result.sent == 0
     with WALQueue(db_path) as wal:
         assert wal.pending_count() == 0
+
+
+def test_drain_logs_eviction_count(tmp_path, caplog):
+    """drain() emits a structured log line when dead-row eviction deletes rows.
+
+    Without telemetry an operator has no visibility into permanently-lost
+    events. The log line carries evicted_count + ttl_days as structured
+    extras so downstream log processors can alert on sustained eviction.
+    """
+    db_path = tmp_path / "log_evict.db"
+    with WALQueue(db_path) as wal:
+        wal.enqueue("/ingest/event", {"key": "a"}, "user1", "tok")
+        wal.enqueue("/ingest/event", {"key": "b"}, "user1", "tok")
+        nine_days_ago = (
+            datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=9)
+        ).isoformat(timespec="microseconds")
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE wal_queue SET attempts = 5, created_at = ?", (nine_days_ago,))
+        conn.commit()
+        conn.close()
+
+        with mock_server(200) as base_url, caplog.at_level("INFO", logger="parallax.wal"):
+            wal.drain(base_url, timeout=2.0)
+
+    eviction_records = [r for r in caplog.records if getattr(r, "evicted_count", None) is not None]
+    assert len(eviction_records) == 1
+    assert eviction_records[0].evicted_count == 2
+    assert eviction_records[0].ttl_days == 7
+
+
+def test_drain_no_eviction_log_when_zero_dead_rows(tmp_path, caplog):
+    """drain() does NOT emit eviction log when no dead rows match."""
+    db_path = tmp_path / "no_evict.db"
+    with WALQueue(db_path) as wal:
+        wal.enqueue("/ingest/event", {"key": "val"}, "user1", "tok")
+        with mock_server(200) as base_url, caplog.at_level("INFO", logger="parallax.wal"):
+            result = wal.drain(base_url, timeout=2.0)
+    eviction_records = [r for r in caplog.records if getattr(r, "evicted_count", None) is not None]
+    assert eviction_records == []
+    assert result.sent == 1

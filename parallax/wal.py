@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import logging
 import os
 import pathlib
 import sqlite3
@@ -25,6 +26,11 @@ __all__ = ["WALQueue", "DrainResult"]
 
 DRAIN_BATCH = 100
 _DEAD_ROW_TTL_DAYS = 7
+
+# Stdlib logging keeps wal.py copyable to stdlib-only clients without
+# adding parallax.obs.log as a dependency. The existing hook.py inline
+# copy uses _log_debug (env-gated stderr) for the same purpose.
+_log = logging.getLogger("parallax.wal")
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS wal_queue (
@@ -141,11 +147,21 @@ class WALQueue:
             eviction_cutoff = (
                 datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_DEAD_ROW_TTL_DAYS)
             ).isoformat(timespec="microseconds")
-            conn.execute(
+            cursor = conn.execute(
                 "DELETE FROM wal_queue WHERE attempts >= 5 AND created_at < ?",
                 (eviction_cutoff,),
             )
+            evicted_count = cursor.rowcount
             conn.commit()
+            if evicted_count > 0:
+                _log.info(
+                    "wal_dead_rows_evicted",
+                    extra={
+                        "event": "wal_dead_rows_evicted",
+                        "evicted_count": evicted_count,
+                        "ttl_days": _DEAD_ROW_TTL_DAYS,
+                    },
+                )
 
             rows = conn.execute(
                 "SELECT seq, endpoint, payload, user_id, token, attempts"
