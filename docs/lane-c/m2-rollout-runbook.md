@@ -86,31 +86,65 @@ tail -n 1 /var/log/parallax/shadow/shadow-decisions-$(date -u +%F).jsonl
 
 ## 72-hour DoD Verification
 
-> **NOTE:** The DoD checks below depend on the **WS-3** module (`parallax.shadow.discrepancy`) and the `scripts/shadow_continuity_check.py` CLI. Until WS-3 ships, the DoD numerics (`discrepancy_rate ≤ 0.3 %`, `checksum 一致率 ≥ 99.9 %`) **cannot be programmatically verified** — only spot-checked. Use the fallback below.
+WS-3 ships `parallax.shadow.discrepancy` + `scripts/shadow_continuity_check.py` + a Prometheus `/metrics` endpoint + a Grafana dashboard. All three DoD numerics are now programmatically verifiable.
 
-### Fallback (until WS-3 ships)
+### One-shot DoD check (recommended)
 ```bash
-# Line count over the 72h window — sanity check that records are arriving
-ls -la /var/log/parallax/shadow/shadow-decisions-*.jsonl
-wc -l /var/log/parallax/shadow/shadow-decisions-*.jsonl
-
-# Eyeball the latest record
-tail -n 1 /var/log/parallax/shadow/shadow-decisions-$(date -u +%F).jsonl | python -m json.tool
+# Run the bundled CLI; exit code 0 means all 3 DoD assertions pass.
+python scripts/shadow_continuity_check.py --since=72h --min-records=1 --format=human
 ```
 
-This is **not** the DoD verification — it is a stand-in until WS-3 lands.
+The CLI reports record count, malformed lines, divergent records, `discrepancy_rate`, `checksum_consistency`, and a SHA-256 chain hash over the deterministic JSONL stream. Pass `--format=json` for machine-readable output. Use `--min-records=N` to assert against an expected lower bound (zero-log-loss guard — the runbook's "0 records means writer is broken" check).
 
-### After WS-3 ships
+### Per-metric verification
 ```bash
-# 1. Zero log loss — checksum chain over the full 72h JSONL window
-python scripts/shadow_continuity_check.py --since=72h
+# 1. Zero log loss — chain hash + record count
+python scripts/shadow_continuity_check.py --since=72h --min-records=1 --format=json | python -m json.tool
 
 # 2. discrepancy_rate <= 0.3% (rolling 1h windows)
 python -c "from parallax.shadow.discrepancy import discrepancy_rate; print(discrepancy_rate(window='1h'))"
 
-# 3. checksum 一致率 >= 99.9% (>= 999/1000 windows green)
+# 3. checksum 一致率 >= 99.9% (>= 999/1000 records consistent in window)
 python -c "from parallax.shadow.discrepancy import checksum_consistency; print(checksum_consistency(window='1h'))"
 ```
+
+### Live observability — Prometheus + Grafana
+
+The Parallax server exposes `/metrics` (unauthenticated, aggregate floats only — no PII) with three shadow gauges:
+
+```text
+parallax_shadow_discrepancy_rate         # rolling 1h
+parallax_shadow_checksum_consistency     # rolling 1h
+parallax_shadow_log_records_total        # rolling 1h
+```
+
+```bash
+# Scrape from anywhere on the host:
+curl -s http://127.0.0.1:8765/metrics | grep parallax_shadow_
+```
+
+Import the bundled dashboard once per Grafana instance:
+
+```bash
+# Grafana 10+ — import via UI (Dashboards → New → Import → Upload JSON file)
+# or via the HTTP API:
+curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $GRAFANA_TOKEN" \
+  http://grafana.internal:3000/api/dashboards/db \
+  --data-binary @grafana/dashboards/parallax-shadow-observability.json
+```
+
+The dashboard auto-refreshes every 30s and red-zones at the DoD thresholds (`discrepancy_rate > 0.3%` / `checksum_consistency < 99.9%`).
+
+### PM2 startup (ZenBook)
+
+```bash
+# Install + start the parallax server with shadow log routing:
+sudo pm2 start pm2/ecosystem.config.js
+sudo pm2 save                 # persist across reboot
+sudo pm2 logs parallax        # tail combined stdout/stderr
+```
+
+The PM2 config writes Parallax server logs to `/var/log/parallax/parallax.{out,err}.log` and points `SHADOW_LOG_DIR=/var/log/parallax/shadow` (matches what `parallax.router.shadow` writes directly).
 
 ## Rollback Procedure
 
@@ -149,3 +183,17 @@ The hard invariants in `parallax/router/shadow.py` mean a shadow-side bug cannot
 ### `feat/lane-c-us-006-shadow-mode` (Iter 1 + Iter 2)
 - `parallax/router/shadow.py` (new, then modified) — `ShadowInterceptor` + 9-field `ShadowDecisionLog` + `math.isclose` score compare + UTC daily rotation + cached log dir
 - `tests/router/test_shadow_interceptor.py` (new, then extended) — 17 tests covering schema (9 fields) / bypass / divergence / latency / correlation_id / FP-drift score tolerance / UTC rotation / one-time mkdir
+
+### `feat/m2-ws3-shadow-observability` (WS-3, this branch)
+- `parallax/shadow/__init__.py` + `parallax/shadow/discrepancy.py` (new) — `discrepancy_rate`, `checksum_consistency`, `compute_checksum_chain`, `parse_window`, `load_records` over the JSONL stream
+- `scripts/shadow_continuity_check.py` (new) — 72h DoD CLI with `--since`, `--min-records`, `--format`, exit-code semantics
+- `parallax/server/routes/metrics.py` (new) — `GET /metrics` Prometheus text format, in-house counter mirror + 3 shadow gauges, 30s scrape cache
+- `parallax/server/app.py` (modified) — wire `metrics_router` into `create_app()`
+- `parallax/config.py` (modified) — `ParallaxConfig` gains `shadow_mode` / `shadow_user_allowlist` / `shadow_log_dir`; `load_config()` reads matching env vars
+- `pyproject.toml` (modified) — adds `prometheus_client>=0.20` dependency
+- `grafana/dashboards/parallax-shadow-observability.json` (new) — 4-panel Grafana 10+ dashboard with red zones at DoD thresholds
+- `pm2/ecosystem.config.js` (new) — PM2 launch config for the ZenBook deploy with log routing
+- `tests/shadow/test_discrepancy.py` (new) — 37 tests for the discrepancy module
+- `tests/shadow/test_continuity_check.py` (new) — 9 tests for the CLI (subprocess-based)
+- `tests/server/test_metrics_endpoint.py` (new) — 7 tests for `/metrics`
+- `tests/test_config.py` (modified) — 6 new tests for the shadow config fields
