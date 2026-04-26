@@ -478,3 +478,96 @@ def test_compute_checksum_chain_order_sensitive() -> None:
     r1 = _record(correlation_id="a")
     r2 = _record(correlation_id="b")
     assert compute_checksum_chain([r1, r2]) != compute_checksum_chain([r2, r1])
+
+
+# ---------------------------------------------------------------------------
+# Iter 2 fixes — regression tests for reviewer findings
+# ---------------------------------------------------------------------------
+
+
+def test_load_records_naive_timestamp_normalised_to_utc(log_dir: Path) -> None:
+    """CRITICAL regression: a naive timestamp must NOT crash load_records.
+
+    A record with a timestamp lacking a tz offset (e.g. ``2026-04-26T10:30:00``)
+    used to raise TypeError on the cutoff comparison because the cutoff is
+    UTC-aware. The fix forces UTC on naive results — the documented default
+    for daily file rotation.
+    """
+    naive = _record(timestamp="2026-04-26T10:30:00")  # NOTE: no +00:00
+    _write_records(log_dir, [naive])
+    result = load_records(
+        log_dir=log_dir,
+        since=dt.timedelta(hours=24),
+        now=_now("2026-04-26T11:00:00+00:00"),
+    )
+    # Should load, not crash. The naive timestamp is interpreted as UTC.
+    assert len(result.records) == 1
+    assert result.malformed == 0
+
+
+def test_discrepancy_rate_naive_timestamp_does_not_crash(log_dir: Path) -> None:
+    """Companion: discrepancy_rate must not crash on naive timestamps."""
+    _write_records(
+        log_dir,
+        [_record(arbitration_outcome="diverge", timestamp="2026-04-26T10:30:00")],
+    )
+    rate = discrepancy_rate(window="24h", log_dir=log_dir, now=_now("2026-04-26T11:00:00+00:00"))
+    assert rate == 1.0
+
+
+def test_checksum_consistency_accepts_forward_compat_schema_version(log_dir: Path) -> None:
+    """Schema bumps within ``1.x`` must remain consistent (forward-compat)."""
+    _write_records(
+        log_dir,
+        [_record(timestamp="2026-04-26T11:00:00.000000+00:00", schema_version="1.5")],
+    )
+    consistency = checksum_consistency(
+        window="1h", log_dir=log_dir, now=_now("2026-04-26T12:00:00+00:00")
+    )
+    assert consistency == 1.0
+
+
+def test_checksum_consistency_rejects_major_version_bump(log_dir: Path) -> None:
+    """``2.0`` (or any non-``1.x``) must surface as inconsistent immediately."""
+    _write_records(
+        log_dir,
+        [_record(timestamp="2026-04-26T11:00:00.000000+00:00", schema_version="2.0")],
+    )
+    consistency = checksum_consistency(
+        window="1h", log_dir=log_dir, now=_now("2026-04-26T12:00:00+00:00")
+    )
+    assert consistency == 0.0
+
+
+def test_resolve_log_dir_returns_absolute_path(
+    log_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense-in-depth: SHADOW_LOG_DIR must always resolve to an absolute path."""
+    from parallax.shadow.discrepancy import _resolve_log_dir
+
+    # Explicit param
+    out = _resolve_log_dir(log_dir)
+    assert out.is_absolute()
+
+    # Env var
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(log_dir))
+    out_env = _resolve_log_dir(None)
+    assert out_env.is_absolute()
+
+    # Default fallback
+    monkeypatch.delenv("SHADOW_LOG_DIR", raising=False)
+    out_default = _resolve_log_dir(None)
+    assert out_default.is_absolute()
+    # Default points inside the project tree (mirrors parallax.config default)
+    assert out_default.name == "logs"
+
+
+def test_default_log_dir_matches_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drift guard: parallax.shadow.discrepancy default must match parallax.config."""
+    from parallax.config import load_config
+    from parallax.shadow.discrepancy import _DEFAULT_LOG_DIR
+
+    for key in ("SHADOW_MODE", "SHADOW_USER_ALLOWLIST", "SHADOW_LOG_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    cfg = load_config()
+    assert _DEFAULT_LOG_DIR.resolve() == cfg.shadow_log_dir

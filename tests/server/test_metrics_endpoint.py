@@ -23,6 +23,8 @@ from fastapi.testclient import TestClient
 
 from parallax.server.app import create_app
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -30,7 +32,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
     monkeypatch.setenv("PARALLAX_DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
-    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(Path("E:/Parallax/parallax/schema.sql")))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
     (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
 
     # Reset the metrics-route module cache so each test sees a fresh window.
