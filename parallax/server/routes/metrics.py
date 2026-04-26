@@ -32,8 +32,7 @@ from prometheus_client import (
 
 from parallax.obs.metrics import registry as _inhouse_registry
 from parallax.shadow.discrepancy import (
-    checksum_consistency,
-    discrepancy_rate,
+    is_record_consistent,
     load_records,
     parse_window,
 )
@@ -67,13 +66,36 @@ def _reset_cache_for_tests() -> None:
 
 
 def _collect_shadow_metrics() -> dict[str, float]:
-    """Compute the three shadow gauge values from the JSONL log directory."""
+    """Compute all three shadow gauge values with a single ``load_records`` walk.
+
+    Calling ``discrepancy_rate`` + ``checksum_consistency`` separately would
+    re-walk the JSONL directory twice; collapsing here trims a cache-miss
+    scrape from 3 reads to 1. Semantics must mirror the public functions
+    exactly — drift is pinned by ``test_metrics_collapsed_walk_matches_*``
+    in tests/server/test_metrics_endpoint.py.
+    """
     delta = parse_window(_WINDOW)
     loaded = load_records(since=delta)
+    parsed = len(loaded.records)
+    total = parsed + loaded.malformed
+
+    diverge = sum(1 for r in loaded.records if r.get("arbitration_outcome") == "diverge")
+    discrepancy = diverge / parsed if parsed else 0.0
+
+    if total:
+        consistent = sum(
+            1
+            for record, raw in zip(loaded.records, loaded.raw_lines, strict=True)
+            if is_record_consistent(record, raw)
+        )
+        consistency = consistent / total
+    else:
+        consistency = 1.0
+
     return {
-        "discrepancy_rate": discrepancy_rate(window=_WINDOW),
-        "checksum_consistency": checksum_consistency(window=_WINDOW),
-        "log_records_total": float(len(loaded.records)),
+        "discrepancy_rate": discrepancy,
+        "checksum_consistency": consistency,
+        "log_records_total": float(parsed),
     }
 
 

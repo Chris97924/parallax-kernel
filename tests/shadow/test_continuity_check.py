@@ -15,40 +15,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
+from tests.shadow.conftest import make_record as _record
+from tests.shadow.conftest import write_records as _write_records
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "shadow_continuity_check.py"
-
-
-def _record(
-    arbitration_outcome: str = "match",
-    timestamp: str = "2026-04-26T11:00:00.000000+00:00",
-    **overrides: Any,
-) -> dict[str, Any]:
-    base = {
-        "arbitration_outcome": arbitration_outcome,
-        "correlation_id": "cid-1",
-        "crosswalk_status": "ok",
-        "latency_ms": 1.0,
-        "query_type": "recent_context",
-        "schema_version": "1.0",
-        "selected_port": "QueryPort",
-        "timestamp": timestamp,
-        "user_id": "alice",
-    }
-    base.update(overrides)
-    return base
-
-
-def _write_records(log_dir: Path, records: list[dict], date: str = "2026-04-26") -> Path:
-    path = log_dir / f"shadow-decisions-{date}.jsonl"
-    with path.open("a", encoding="utf-8") as fh:
-        for r in records:
-            fh.write(json.dumps(r, sort_keys=True) + "\n")
-    return path
 
 
 def _run(*args: str, env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess:
