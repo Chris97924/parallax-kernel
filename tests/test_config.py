@@ -86,3 +86,55 @@ class TestLoadConfig:
         cfg = load_config()
         assert cfg.db_path.is_absolute()
         assert cfg.db_path == (tmp_path / "relative" / "db.sqlite").resolve()
+
+
+class TestShadowConfig:
+    """Lane C v0.2.0-beta WS-3 — shadow flag plumbing through ParallaxConfig.
+
+    Per the runbook ``Post-merge Enablement`` section, shadow is gated by
+    three env vars: ``SHADOW_MODE`` / ``SHADOW_USER_ALLOWLIST`` / ``SHADOW_LOG_DIR``.
+    The first two are read per-request inside ``parallax.router.shadow`` for
+    hot-flip semantics; ``ParallaxConfig`` exposes the same values for the
+    ``/metrics`` endpoint and the continuity-check CLI.
+    """
+
+    def test_defaults_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for key in ("SHADOW_MODE", "SHADOW_USER_ALLOWLIST", "SHADOW_LOG_DIR"):
+            monkeypatch.delenv(key, raising=False)
+        cfg = load_config()
+        assert cfg.shadow_mode is False
+        assert cfg.shadow_user_allowlist == ()
+        assert cfg.shadow_log_dir.name == "logs"
+
+    def test_shadow_mode_truthy_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for raw in ("true", "True", "TRUE", "1", "yes"):
+            monkeypatch.setenv("SHADOW_MODE", raw)
+            cfg = load_config()
+            assert cfg.shadow_mode is True, raw
+
+    def test_shadow_mode_falsy_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for raw in ("false", "False", "0", "no", ""):
+            monkeypatch.setenv("SHADOW_MODE", raw)
+            cfg = load_config()
+            assert cfg.shadow_mode is False, raw
+
+    def test_shadow_user_allowlist_parses_csv(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SHADOW_USER_ALLOWLIST", "alice,bob , charlie")
+        cfg = load_config()
+        assert cfg.shadow_user_allowlist == ("alice", "bob", "charlie")
+
+    def test_shadow_user_allowlist_empty_csv_is_empty_tuple(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SHADOW_USER_ALLOWLIST", " , ,")
+        cfg = load_config()
+        assert cfg.shadow_user_allowlist == ()
+
+    def test_shadow_log_dir_env_override(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom = tmp_path / "custom-shadow-logs"
+        monkeypatch.setenv("SHADOW_LOG_DIR", str(custom))
+        cfg = load_config()
+        assert cfg.shadow_log_dir == custom.resolve()
+        assert cfg.shadow_log_dir.is_absolute()
