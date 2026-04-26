@@ -41,6 +41,7 @@ from parallax.server.routes.backfill import router as backfill_router
 from parallax.server.routes.export import router as export_router
 from parallax.server.routes.ingest import router as ingest_router
 from parallax.server.routes.inspect import router as inspect_router
+from parallax.server.routes.metrics import router as metrics_router
 from parallax.server.routes.query import router as query_router
 
 __all__ = ["create_app"]
@@ -143,6 +144,7 @@ def create_app(
     app.include_router(inspect_router)
     app.include_router(export_router)
     app.include_router(backfill_router)
+    app.include_router(metrics_router)
 
     if os.environ.get("PARALLAX_VIEWER_ENABLED", "0") == "1":
         from parallax.server.viewer import router as viewer_router

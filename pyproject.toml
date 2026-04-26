@@ -16,6 +16,7 @@ dependencies = [
     "typing-extensions>=4.0",
     "tenacity>=8",
     "pydantic>=2",
+    "prometheus_client>=0.20",
 ]
 
 [project.scripts]
