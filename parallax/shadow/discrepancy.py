@@ -59,10 +59,16 @@ _NINE_FIELDS = frozenset(
     }
 )
 
-_DEFAULT_LOG_DIR = Path("parallax/logs")
+# Default mirrors parallax.config._DEFAULT_SHADOW_LOG_DIR. Computed here from
+# __file__ instead of imported to avoid a parallax.config dependency in this
+# leaf module — drift risk is documented in tests/test_config.py.
+_DEFAULT_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "parallax" / "logs"
 _LOG_FILE_GLOB = "shadow-decisions-*.jsonl"
 _LOG_FILE_DATE_RE = re.compile(r"^shadow-decisions-(\d{4}-\d{2}-\d{2})\.jsonl$")
 _WINDOW_RE = re.compile(r"^(?P<n>\d+)(?P<unit>[smhd])$")
+# Forward-compat: schema_version "1.x" is accepted; "2.0" forces the consistency
+# check to fail so an unannounced major bump surfaces immediately.
+_SCHEMA_VERSION_PREFIX = SCHEMA_VERSION.split(".", 1)[0] + "."
 
 
 # ---------------------------------------------------------------------------
@@ -122,17 +128,35 @@ class LoadResult:
 
 
 def _resolve_log_dir(log_dir: Path | str | None) -> Path:
+    """Resolve to an absolute path. ``.resolve()`` normalises any symlinks so the
+    glob below cannot follow a symlink named ``shadow-decisions-evil.jsonl`` to
+    an arbitrary host file (defense-in-depth — the writer is trusted, but the
+    operator-controlled SHADOW_LOG_DIR / --log-dir flag is not)."""
     if log_dir is not None:
-        return Path(log_dir)
+        return Path(log_dir).resolve()
     env = os.environ.get("SHADOW_LOG_DIR")
-    return Path(env) if env else _DEFAULT_LOG_DIR
+    if env:
+        return Path(env).resolve()
+    return _DEFAULT_LOG_DIR.resolve()
 
 
 def _parse_timestamp(raw: str) -> _dt.datetime | None:
+    """Parse an ISO-8601 timestamp; force UTC on naive results.
+
+    Naive timestamps would otherwise raise ``TypeError`` on the
+    ``record_ts >= cutoff`` comparison in ``load_records`` (cutoff is always
+    UTC-aware). The shadow router writes microsecond UTC offsets, but a
+    third-party / replayed record could land naive — bricking the entire
+    /metrics endpoint and CLI. UTC is the documented default for the daily
+    file rotation, so naive → UTC is the correct interpretation.
+    """
     try:
-        return _dt.datetime.fromisoformat(raw)
+        parsed = _dt.datetime.fromisoformat(raw)
     except (TypeError, ValueError):
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.UTC)
+    return parsed
 
 
 def _file_date(path: Path) -> _dt.date | None:
@@ -254,13 +278,15 @@ def _is_consistent(record: dict[str, Any], raw_line: str) -> bool:
     """A record is consistent iff:
 
     * exactly the 9 canonical fields are present (no missing, no extra),
-    * ``schema_version`` matches the locked SCHEMA_VERSION,
+    * ``schema_version`` matches the locked major version (forward-compat
+      within the ``1.x`` series; ``2.0`` would correctly fail),
     * ``json.dumps(record, sort_keys=True)`` reproduces the on-disk line —
       protects the deterministic-checksum guarantee documented in the runbook.
     """
     if set(record.keys()) != _NINE_FIELDS:
         return False
-    if record.get("schema_version") != SCHEMA_VERSION:
+    sv = record.get("schema_version")
+    if not isinstance(sv, str) or not sv.startswith(_SCHEMA_VERSION_PREFIX):
         return False
     return json.dumps(record, sort_keys=True) == raw_line
 

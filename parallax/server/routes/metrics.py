@@ -44,6 +44,12 @@ router = APIRouter(tags=["meta"])
 
 # Cache scrape results so a Prometheus 15s scrape interval doesn't flog disk.
 # 30s TTL is a deliberate over-shoot so two consecutive scrapes hit the cache.
+#
+# Trade-off: alerting latency is bounded by `30s + scrape_interval`. With a
+# 15s Prometheus scrape interval, post-incident discrepancy spikes can show
+# stale healthy values for up to 30s. Acceptable for the 72h DoD window
+# (30s is noise on a 72h timeline). Tighten this if sub-minute alerts ever
+# matter.
 _CACHE_TTL_SECONDS = 30.0
 _WINDOW = "1h"
 
@@ -72,16 +78,24 @@ def _collect_shadow_metrics() -> dict[str, float]:
 
 
 def _cached_shadow_metrics() -> dict[str, float]:
+    """Read-then-fill cache under a single lock to prevent N concurrent scrapes
+    from each running ``_collect_shadow_metrics()`` (which walks the JSONL dir).
+
+    Holding the lock across the disk read trades scrape latency for
+    correctness: a burst of N scrapes computes the metric exactly once, then
+    each waiter copies the cached dict. Disk I/O time dominates lock-hold time
+    only under abnormal scrape concurrency (>>1/s) — Prometheus default is
+    well under that.
+    """
     global _cache, _cache_at
-    now = time.monotonic()
     with _cache_lock:
+        now = time.monotonic()
         if _cache is not None and (now - _cache_at) < _CACHE_TTL_SECONDS:
             return _cache
-    fresh = _collect_shadow_metrics()
-    with _cache_lock:
+        fresh = _collect_shadow_metrics()
         _cache = fresh
-        _cache_at = now
-    return fresh
+        _cache_at = time.monotonic()
+        return fresh
 
 
 def _build_payload() -> str:
