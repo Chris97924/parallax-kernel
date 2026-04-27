@@ -89,12 +89,13 @@ def build_judge_prompt(q: Question, prediction: str) -> str:
 
 
 def parse_verdict(judge_text: str) -> tuple[str, str]:
+    if not judge_text.strip():
+        raise ValueError("empty verdict")
     first, _, rest = judge_text.strip().partition("\n")
     head = first.strip().upper().split()
-    verdict = "INCORRECT"
-    if head and head[0] in {"CORRECT", "INCORRECT"}:
-        verdict = head[0]
-    return verdict, rest.strip()
+    if not head or head[0] not in {"CORRECT", "INCORRECT"}:
+        raise ValueError(f"unparseable verdict head: {first.strip()!r}")
+    return head[0], rest.strip()
 
 
 def run_one(
@@ -104,6 +105,7 @@ def run_one(
     judge_model: str,
     max_output_tokens: int = 512,
     use_retrieval: bool = False,
+    no_memory: bool = False,
 ) -> AnswerRecord:
     """Run the full pipeline for a single question. Exceptions become ERROR.
 
@@ -113,18 +115,29 @@ def run_one(
     ``build_from_parallax_retrieval(conn, q)``, which reads back through the
     Parallax store we just ingested into. The retrieval path is opt-in so
     existing Run B baselines stay reproducible.
+
+    When ``no_memory`` is True, the ingest + store path is skipped entirely
+    (``ephemeral_store`` is never opened). The answer prompt receives an empty
+    marker string so the model knows no history is available. This is the
+    closed-book baseline for the Phase 2 ladder ablation — skipping ingest
+    ensures the oracle/parallax/no_memory gap is not polluted by silent
+    history leakage.
     """
-    try:
-        with ephemeral_store() as conn:
-            turns = ingest_question(conn, q)
-            transcript = (
-                build_from_parallax_retrieval(conn, q)
-                if use_retrieval
-                else dump_all_sessions(q)
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("ingest failed for %s", q.question_id)
-        return _err_record(q, answer_model, judge_model, str(exc), stage="ingest")
+    if no_memory:
+        turns = 0
+        transcript = "(no chat history provided)"
+    else:
+        try:
+            with ephemeral_store() as conn:
+                turns = ingest_question(conn, q)
+                transcript = (
+                    build_from_parallax_retrieval(conn, q)
+                    if use_retrieval
+                    else dump_all_sessions(q)
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ingest failed for %s", q.question_id)
+            return _err_record(q, answer_model, judge_model, str(exc), stage="ingest")
 
     # Fail loud when retrieval returns nothing. Passing an empty transcript
     # to the answer model would produce a plausible hallucinated prediction
@@ -179,7 +192,27 @@ def run_one(
             judge_model=judge_model,
         )
 
-    verdict, reason = parse_verdict(jr.text)
+    try:
+        verdict, reason = parse_verdict(jr.text)
+    except ValueError as exc:
+        logger.warning("parse_verdict failed for %s: %s", q.question_id, exc)
+        return AnswerRecord(
+            question_id=q.question_id,
+            question_type=q.question_type,
+            question=q.question,
+            gold=q.answer,
+            prediction=ans.text,
+            verdict="ERROR",
+            judge_reason=f"parse_verdict failed: {exc}",
+            turns_ingested=turns,
+            answer_prompt_tokens=ans.prompt_tokens,
+            answer_output_tokens=ans.output_tokens,
+            judge_prompt_tokens=jr.prompt_tokens,
+            judge_output_tokens=jr.output_tokens,
+            answer_model=answer_model,
+            judge_model=judge_model,
+        )
+
     return AnswerRecord(
         question_id=q.question_id,
         question_type=q.question_type,

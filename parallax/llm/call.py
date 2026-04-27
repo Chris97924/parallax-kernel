@@ -25,7 +25,6 @@ import pathlib
 import sqlite3
 import threading
 import time
-from typing import Any
 
 from tenacity import (
     retry,
@@ -36,9 +35,46 @@ from tenacity import (
 
 logger = logging.getLogger(__name__)
 
+# ---------- Gemini key rotation pool ----------------------------------------
+
+_GEMINI_KEY_ENVS: tuple[str, ...] = (
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY_2",
+    "GEMINI_API_KEY_3",
+)
+
+_key_idx: int = 0
+
 
 class LLMCallError(RuntimeError):
     """Raised when an LLM call fails in a non-retryable way."""
+
+
+def _gemini_keys() -> list[str]:
+    """Return deduplicated Gemini API keys from configured env vars."""
+    seen: set[str] = set()
+    keys: list[str] = []
+    for env in _GEMINI_KEY_ENVS:
+        val = os.environ.get(env)
+        if not val:
+            continue
+        if val in seen:
+            continue
+        seen.add(val)
+        keys.append(val)
+    return keys
+
+
+def _next_gemini_key() -> str:
+    """Return next key in round-robin rotation. Raises LLMCallError if pool empty."""
+    global _key_idx
+    keys = _gemini_keys()
+    if not keys:
+        raise LLMCallError("no Gemini API key configured")
+    key = keys[_key_idx % len(keys)]
+    _key_idx += 1
+    return key
 
 
 class RateLimitError(RuntimeError):
@@ -158,9 +194,7 @@ def _call_gemini(
     except Exception as exc:  # pragma: no cover — SDK missing
         raise LLMCallError(f"google-genai SDK not importable: {exc}") from exc
 
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise LLMCallError("GEMINI_API_KEY not set")
+    api_key = _next_gemini_key()
 
     system, user = _messages_to_gemini(messages)
     client = genai.Client(api_key=api_key)
