@@ -35,7 +35,13 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from parallax import __version__
-from parallax.server.auth import auth_configured
+from parallax.server.auth import (
+    PARALLAX_BIND_HOST_ENV,
+    assert_safe_to_start,
+    auth_configured,
+    bind_host_is_safe,
+    metrics_public_allowed,
+)
 from parallax.server.deps import DBFactory, default_db_factory
 from parallax.server.routes.backfill import router as backfill_router
 from parallax.server.routes.export import router as export_router
@@ -121,10 +127,36 @@ def create_app(
     app.state.db_factory = db_factory or default_db_factory
     app.state.settings = dict(settings or {})
 
+    # Refuse to start when bound to a non-localhost interface without auth.
+    # Override with ``PARALLAX_ALLOW_OPEN_PUBLIC=1`` if absolutely needed.
+    assert_safe_to_start()
+
     if not auth_configured():
+        bind_host = os.environ.get(PARALLAX_BIND_HOST_ENV, "")
+        if bind_host_is_safe(bind_host):
+            _log.warning(
+                "PARALLAX_TOKEN is unset — server is running in OPEN MODE on "
+                "loopback. Set PARALLAX_TOKEN before exposing this server "
+                "outside localhost."
+            )
+        else:
+            # Reachable only when PARALLAX_ALLOW_OPEN_PUBLIC=1 was explicitly
+            # set (otherwise assert_safe_to_start would have raised).
+            _log.error(
+                "PARALLAX_TOKEN is unset AND %s=%r is non-localhost; opt-in "
+                "via PARALLAX_ALLOW_OPEN_PUBLIC=1. This is unsafe — anyone on "
+                "the network can read/write your kernel.",
+                PARALLAX_BIND_HOST_ENV,
+                bind_host,
+            )
+
+    # Audit log when the /metrics public override is active so post-incident
+    # readers can see the route was deliberately exposed.
+    if metrics_public_allowed():
         _log.warning(
-            "PARALLAX_TOKEN is unset — server is running in OPEN MODE. "
-            "Set PARALLAX_TOKEN before exposing this server outside localhost."
+            "auth.metrics.public_override_active — /metrics is reachable "
+            "without a bearer token (PARALLAX_METRICS_PUBLIC=1). Ensure "
+            "the network boundary or upstream proxy gates the route."
         )
 
     @app.get("/healthz", tags=["meta"])

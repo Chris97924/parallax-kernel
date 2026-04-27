@@ -36,6 +36,13 @@ module.exports = {
       env: {
         PARALLAX_DB_PATH: '/var/lib/parallax/parallax.db',
         PARALLAX_VAULT_PATH: '/var/lib/parallax/vault',
+        // PARALLAX_BIND_HOST must mirror the uvicorn `--host` arg above so
+        // `assert_safe_to_start()` reads the same bind address uvicorn
+        // actually binds to. The `parallax serve` CLI subcommand sets this
+        // automatically; direct `uvicorn parallax.server.app:app --host X`
+        // invocation (this file) does not, so we set it explicitly here.
+        // If you change `--host` above, update this value too.
+        PARALLAX_BIND_HOST: '127.0.0.1',
         // SHADOW_MODE / SHADOW_USER_ALLOWLIST / SHADOW_LOG_DIR are read from
         // the systemd EnvironmentFile (see runbook §Post-merge Enablement).
         // Do NOT hardcode SHADOW_MODE=true here — flag flips must remain a

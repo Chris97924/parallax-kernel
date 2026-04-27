@@ -85,14 +85,14 @@ class TestClaimsBySubject:
 class TestContentHashLookup:
     def test_memory_by_hash_hit_and_miss(self, seeded: sqlite3.Connection) -> None:
         h = content_hash("a", "s1", "a.md")
-        hit = memory_by_content_hash(seeded, h)
+        hit = memory_by_content_hash(seeded, h, user_id="chris")
         assert hit is not None
         assert hit["vault_path"] == "a.md"
-        assert memory_by_content_hash(seeded, "deadbeef") is None
+        assert memory_by_content_hash(seeded, "deadbeef", user_id="chris") is None
 
     def test_claim_by_hash_hit_and_miss(self, seeded: sqlite3.Connection) -> None:
         h = content_hash("chris", "likes", "coffee", "direct:chris", "chris")
-        hit = claim_by_content_hash(seeded, h)
+        hit = claim_by_content_hash(seeded, h, user_id="chris")
         assert hit is not None
         assert hit["object"] == "coffee"
-        assert claim_by_content_hash(seeded, "nope") is None
+        assert claim_by_content_hash(seeded, "nope", user_id="chris") is None

@@ -7,9 +7,21 @@ exposes WS-3 shadow observability gauges:
 * ``parallax_shadow_checksum_consistency`` — current rolling-1h consistency
 * ``parallax_shadow_log_records_total`` — record count in the rolling window
 
-Unauthenticated by design: Prometheus scrape jobs typically don't carry bearer
-tokens, and the metric values are aggregate floats with no PII or query
-contents. Same posture as ``/healthz``.
+Auth posture
+------------
+* **Open mode** (no ``PARALLAX_TOKEN``, no ``PARALLAX_MULTI_USER``):
+  unauthenticated. Same posture as ``/healthz``.
+* **Auth configured**: requires the same bearer token as the rest of the
+  API. Operators who deliberately want an open scrape endpoint (e.g.
+  behind a private network or Cloudflare Access policy) can opt in by
+  setting ``PARALLAX_METRICS_PUBLIC=1``.
+
+The values themselves carry no PII or query contents — only aggregate
+floats — but exposing them publicly still leaks ingest cadence, retrieve
+volume, shadow discrepancy rate, and service-existence signals that an
+attacker can use for reconnaissance. Defaulting to fail-closed when auth
+is available keeps that signal off the public internet without
+operators having to remember to gate it.
 
 Disk reads are cached for ``_CACHE_TTL_SECONDS`` so concurrent scrapes don't
 re-walk the JSONL files. Tests can reset the cache via
@@ -18,11 +30,14 @@ re-walk the JSONL files. Tests can reset the cache via
 
 from __future__ import annotations
 
+import re
+import sqlite3
 import threading
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -30,7 +45,14 @@ from prometheus_client import (
     generate_latest,
 )
 
+from parallax.obs.log import get_logger as _get_logger
 from parallax.obs.metrics import registry as _inhouse_registry
+from parallax.server.auth import (
+    bearer_security,
+    metrics_auth_required,
+    require_auth,
+)
+from parallax.server.deps import get_conn
 from parallax.shadow.discrepancy import (
     is_record_consistent,
     load_records,
@@ -39,7 +61,24 @@ from parallax.shadow.discrepancy import (
 
 __all__ = ["router"]
 
+_log = _get_logger("parallax.server.routes.metrics")
+
+# Names reserved for explicit shadow gauges emitted by ``_build_payload``.
+# An in-house counter that sanitizes to one of these would crash the scrape
+# with prometheus_client's ``Duplicated timeseries`` check. The in-house
+# loop skips + warns instead.
+_RESERVED_GAUGE_SUFFIXES = frozenset(
+    {
+        "shadow_discrepancy_rate",
+        "shadow_checksum_consistency",
+        "shadow_log_records_total",
+    }
+)
+
 router = APIRouter(tags=["meta"])
+
+_BEARER_DEP = Depends(bearer_security)
+_CONN_DEP = Depends(get_conn)
 
 # Cache scrape results so a Prometheus 15s scrape interval doesn't flog disk.
 # 30s TTL is a deliberate over-shoot so two consecutive scrapes hit the cache.
@@ -120,6 +159,38 @@ def _cached_shadow_metrics() -> dict[str, float]:
         return fresh
 
 
+_METRIC_NAME_INVALID_RE = re.compile(r"[^a-zA-Z0-9_]")
+_MULTI_UNDERSCORE_RE = re.compile(r"_+")
+
+
+def _sanitize_metric_name(name: str) -> str:
+    """Return a valid Prometheus metric name derived from an in-house counter key.
+
+    Strips any embedded label selector (``{...}``), removes a leading
+    ``parallax_`` prefix so the caller's ``f"parallax_{...}"`` doesn't
+    double-prefix, then replaces any remaining invalid characters with ``_``.
+
+    Note: ``:`` is valid per the Prometheus exposition spec but is reserved
+    for recording rules. Parallax in-house counter keys never use it, so the
+    sanitizer collapses it to ``_`` along with other non-identifier chars.
+
+    Pathological inputs (``"parallax_"``, ``"{kind='bug'}"``, ``"___"``)
+    collapse to ``""``. ``_build_payload`` MUST skip empty results before
+    constructing a Gauge — the empty case would otherwise emit a metric
+    named ``parallax_`` (spec-valid trailing underscore) and a second such
+    key would crash the scrape with prometheus_client's duplicate-name
+    check.
+    """
+    brace = name.find("{")
+    if brace != -1:
+        name = name[:brace]
+    if name.startswith("parallax_"):
+        name = name[len("parallax_") :]
+    name = _METRIC_NAME_INVALID_RE.sub("_", name)
+    name = _MULTI_UNDERSCORE_RE.sub("_", name)
+    return name.strip("_")
+
+
 def _build_payload() -> str:
     """Render Prometheus text format combining in-house counters + shadow gauges."""
     reg = CollectorRegistry()
@@ -127,9 +198,34 @@ def _build_payload() -> str:
     # In-house counters: emit each as a Prometheus Gauge mirroring its current value.
     # Counter (monotonic) would be more idiomatic, but the existing in-house Counter
     # supports reset() (used by tests), so a Gauge mirror is the safer adapter.
-    for name, counter in _inhouse_registry.items():
+    #
+    # ``list(...)`` snapshots the registry so a concurrent ``get_counter()`` call
+    # from an ingest thread can't trigger ``RuntimeError: dictionary changed size
+    # during iteration`` mid-scrape.
+    for name, counter in list(_inhouse_registry.items()):
+        sanitized = _sanitize_metric_name(name)
+        if not sanitized:
+            # Pathological key collapses to empty after sanitization (e.g.,
+            # ``"parallax_"`` or ``"{kind='bug'}"``). Skip + warn so an operator
+            # can trace the orphan via logs — silent drop would hide the
+            # registration bug from /metrics dashboards.
+            _log.warning(
+                "metric.skip_empty_after_sanitize",
+                extra={"original_key": name},
+            )
+            continue
+        if sanitized in _RESERVED_GAUGE_SUFFIXES:
+            # An in-house counter whose sanitized form collides with a reserved
+            # shadow-gauge name would 500 the scrape on the second registration
+            # of ``f"parallax_{sanitized}"``. Skip + warn — fixing the root cause
+            # is the caller's job (rename the counter).
+            _log.warning(
+                "metric.skip_reserved_collision",
+                extra={"original_key": name, "sanitized": sanitized},
+            )
+            continue
         gauge = Gauge(
-            f"parallax_{name}",
+            f"parallax_{sanitized}",
             f"Mirror of parallax.obs.metrics.{name}",
             registry=reg,
         )
@@ -162,6 +258,18 @@ def _build_payload() -> str:
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-def get_metrics() -> PlainTextResponse:
-    """Prometheus scrape endpoint. Unauthenticated, no PII, aggregate values only."""
+def get_metrics(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = _BEARER_DEP,
+    conn: sqlite3.Connection = _CONN_DEP,
+) -> PlainTextResponse:
+    """Prometheus scrape endpoint.
+
+    Auth is enforced when :func:`parallax.server.auth.metrics_auth_required`
+    returns True — i.e. some auth mode is configured AND the operator has
+    not opted into ``PARALLAX_METRICS_PUBLIC=1``. In open mode the route
+    behaves like ``/healthz`` and skips the bearer check entirely.
+    """
+    if metrics_auth_required():
+        require_auth(request, creds, conn)
     return PlainTextResponse(_build_payload(), media_type=CONTENT_TYPE_LATEST)

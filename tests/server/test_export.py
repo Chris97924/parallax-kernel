@@ -6,7 +6,6 @@ Privacy belt-and-braces: rows bypassing ingest filter are dropped at export.
 
 from __future__ import annotations
 
-import os
 import pathlib
 import sqlite3
 
@@ -70,7 +69,10 @@ def _write_companions(directory: pathlib.Path, companions: dict[str, str]) -> No
     """Write simple companion files with minimal frontmatter."""
     for filename, body in companions.items():
         name = filename.replace(".md", "").replace("_", " ").title()
-        content = f"---\nname: {name}\ndescription: companion for {filename}\ntype: note\n---\n\n{body}"
+        content = (
+            f"---\nname: {name}\ndescription: companion for {filename}"
+            f"\ntype: note\n---\n\n{body}"
+        )
         (directory / filename).write_text(content, encoding="utf-8")
 
 
@@ -222,7 +224,8 @@ class TestExportPrivacyFilterBeltAndBraces:
         try:
             conn.execute(
                 "INSERT INTO memory_cards "
-                "(id, user_id, category, name, filename, description, body, created_at, updated_at) "
+                "(id, user_id, category, name, filename, description, "
+                "body, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
                 (
                     "secret_row_001",
@@ -273,7 +276,7 @@ class TestRoundTripRealMemoryMd:
 
         conn = connect(db_p)
         try:
-            report = ingest_memory_md(conn, memory_md_path=real_mem, user_id="chris")
+            ingest_memory_md(conn, memory_md_path=real_mem, user_id="chris")
         finally:
             conn.close()
 
@@ -284,9 +287,10 @@ class TestRoundTripRealMemoryMd:
         body = resp.json()
         exported_entries = parse_memory_md(body["memory_md"])
 
-        # S7: body-only regex filter — prose mentions of 'token' no longer
-        # cause false positives. All 10 entries survive the privacy filter.
-        assert len(exported_entries) == 10
+        # MEMORY.md grows over time — assert round-trip invariant:
+        # every entry parsed from the input file must survive ingest + export.
+        expected_count = len(parse_memory_md(real_mem.read_text(encoding="utf-8")))
+        assert len(exported_entries) == expected_count
 
         # Category breakdown (all 4 categories populated).
         by_cat: dict[str, int] = {}

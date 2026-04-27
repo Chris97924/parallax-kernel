@@ -27,12 +27,14 @@ from ulid import ULID
 from parallax import telemetry
 from parallax.obs.log import get_logger
 from parallax.sqlite_store import Event, insert_event, now_iso
+from parallax.transitions import is_allowed_transition
 from parallax.validators import VALID_TARGET_KINDS, target_ref_exists
 
 __all__ = [
     "record_event",
     "record_memory_reaffirmed",
     "record_claim_state_changed",
+    "transition_claim_state",
 ]
 
 _log = get_logger("parallax.events")
@@ -147,6 +149,14 @@ def record_claim_state_changed(
 ) -> str:
     """Emit a ``claim.state_changed`` event capturing the from/to transition.
 
+    **This helper writes the audit row only.** It does NOT validate the
+    transition against :data:`parallax.transitions.CLAIM_TRANSITIONS` and
+    it does NOT mutate the ``claims`` table. Callers that need to apply
+    the transition AND emit the event in one step should use
+    :func:`transition_claim_state`, which wraps the ``SELECT current /
+    is_allowed_transition / UPDATE / record_event`` sequence in a single
+    transaction.
+
     ``updated_at`` is the ISO-8601 timestamp the corresponding
     ``UPDATE claims SET state=?, updated_at=?`` applied. Carrying it in the
     event payload lets :func:`parallax.replay.replay_events` reconstruct the
@@ -165,3 +175,97 @@ def record_claim_state_changed(
         target_id=claim_id,
         payload=payload,
     )
+
+
+def transition_claim_state(
+    conn: sqlite3.Connection,
+    *,
+    claim_id: str,
+    to_state: str,
+    actor: str = "system",
+    expected_user_id: str | None = None,
+) -> str:
+    """Apply a claim state transition and emit the matching audit event.
+
+    Atomic ``SELECT current state → is_allowed_transition → UPDATE
+    claims SET state=?, updated_at=? → record_event`` wrapped in a single
+    transaction. Returns the generated ``event_id``.
+
+    Compared with :func:`record_claim_state_changed`, this function is
+    the canonical API for callers that intend the row to actually change:
+    it guarantees that ``claims.state`` and the event log can never go out
+    of sync (no scenario where the event says ``confirmed`` but the row
+    is still ``pending``).
+
+    Parameters
+    ----------
+    claim_id:
+        Target claim primary key. Raises ``ValueError`` when the row does
+        not exist.
+    to_state:
+        Desired next state. Raises ``ValueError`` when the transition
+        from the current state is not in
+        :data:`parallax.transitions.CLAIM_TRANSITIONS`.
+    actor:
+        Audit-trail attribution string (default ``"system"``).
+    expected_user_id:
+        Optional defensive guard. When set, raises ``ValueError`` if the
+        stored ``user_id`` differs from the expected value. Useful for
+        multi-tenant routes that want to refuse a claim id supplied by
+        another tenant before committing the transition.
+
+    Self-loops on non-terminal states (e.g. ``pending → pending``) are
+    accepted because :data:`CLAIM_TRANSITIONS` allows them: this matches
+    the documented retry-safe semantics in ``docs/state-transitions.md``.
+    """
+    with conn:
+        row = conn.execute(
+            "SELECT user_id, state FROM claims WHERE claim_id = ? LIMIT 1",
+            (claim_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"claim {claim_id!r} not found")
+
+        # sqlite3.Row supports both name and index access; tuple factories
+        # only support index. Stay compatible with both.
+        if hasattr(row, "keys"):
+            stored_user_id = row["user_id"]
+            from_state = row["state"]
+        else:
+            stored_user_id = row[0]
+            from_state = row[1]
+
+        if expected_user_id is not None and stored_user_id != expected_user_id:
+            raise ValueError(
+                f"claim {claim_id!r} belongs to a different user "
+                f"(expected {expected_user_id!r}); refusing to transition"
+            )
+
+        if not is_allowed_transition("claim", from_state, to_state):
+            raise ValueError(
+                f"transition {from_state!r} -> {to_state!r} not allowed for claims"
+            )
+
+        updated_at = now_iso()
+        cursor = conn.execute(
+            "UPDATE claims SET state = ?, updated_at = ? "
+            "WHERE claim_id = ? AND state = ?",
+            (to_state, updated_at, claim_id, from_state),
+        )
+        if cursor.rowcount == 0:
+            # A concurrent writer changed the state between our SELECT and
+            # the UPDATE. Surface as ValueError so the caller can retry
+            # with a fresh read instead of silently accepting a no-op.
+            raise ValueError(
+                f"claim {claim_id!r} state changed concurrently "
+                f"(expected from_state={from_state!r}); transition aborted"
+            )
+        return record_claim_state_changed(
+            conn,
+            user_id=str(stored_user_id),
+            claim_id=claim_id,
+            from_state=from_state,
+            to_state=to_state,
+            updated_at=updated_at,
+            actor=actor,
+        )

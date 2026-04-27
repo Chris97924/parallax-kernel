@@ -39,25 +39,47 @@ __all__ = [
     "require_auth",
     "auth_configured",
     "multi_user_mode",
+    "metrics_public_allowed",
+    "metrics_auth_required",
+    "bind_host_is_safe",
+    "assert_safe_to_start",
     "current_user_id",
     "hash_token",
+    "bearer_security",
     "PARALLAX_TOKEN_ENV",
     "PARALLAX_MULTI_USER_ENV",
+    "PARALLAX_METRICS_PUBLIC_ENV",
+    "PARALLAX_BIND_HOST_ENV",
+    "PARALLAX_ALLOW_OPEN_PUBLIC_ENV",
 ]
 
 PARALLAX_TOKEN_ENV = "PARALLAX_TOKEN"
 PARALLAX_MULTI_USER_ENV = "PARALLAX_MULTI_USER"
+PARALLAX_METRICS_PUBLIC_ENV = "PARALLAX_METRICS_PUBLIC"
+PARALLAX_BIND_HOST_ENV = "PARALLAX_BIND_HOST"
+PARALLAX_ALLOW_OPEN_PUBLIC_ENV = "PARALLAX_ALLOW_OPEN_PUBLIC"
+
+_LOCALHOST_HOSTS: frozenset[str] = frozenset({
+    "127.0.0.1",
+    "localhost",
+    "::1",
+    "[::1]",
+    "",  # unset → uvicorn default is 127.0.0.1
+})
 
 _log = logging.getLogger("parallax.server.auth")
 
 # auto_error=False so we can distinguish "no Authorization header" (→ 401 we
 # own) from a malformed header (→ FastAPI's own 403). The extra control also
 # lets us short-circuit in open mode without the header ever being parsed.
-_bearer = HTTPBearer(auto_error=False)
+bearer_security = HTTPBearer(auto_error=False)
+# Backward-compat alias — retained because other modules historically imported
+# the private name. Prefer ``bearer_security`` in new code.
+_bearer = bearer_security
 
 # Module-level Depends singletons — sidesteps ruff's B008 "function call in
 # default argument" complaint for the auth dep wiring.
-_BEARER_DEP = Depends(_bearer)
+_BEARER_DEP = Depends(bearer_security)
 _CONN_DEP = Depends(get_conn)
 
 
@@ -74,6 +96,84 @@ def multi_user_mode() -> bool:
     """
     raw = os.environ.get(PARALLAX_MULTI_USER_ENV, "").strip().lower()
     return raw in ("1", "true")
+
+
+def metrics_public_allowed() -> bool:
+    """True when ``PARALLAX_METRICS_PUBLIC=1`` opts /metrics out of auth.
+
+    Set this only when the operator deliberately wants /metrics reachable
+    without a bearer token (e.g. behind a private network or Cloudflare
+    Access policy). Default is fail-closed: with auth configured, /metrics
+    requires the same bearer the rest of the API does.
+    """
+    raw = os.environ.get(PARALLAX_METRICS_PUBLIC_ENV, "").strip().lower()
+    return raw in ("1", "true")
+
+
+def metrics_auth_required() -> bool:
+    """Return True iff the /metrics route should reject anonymous scrapes.
+
+    Auth is required when (a) the public override is *not* set and
+    (b) some auth mode is configured (single-token or multi-user). In
+    *open mode* (no token, no multi-user) /metrics is open — same posture
+    as /healthz — because there is no auth to enforce in the first place.
+    """
+    if metrics_public_allowed():
+        return False
+    return auth_configured() or multi_user_mode()
+
+
+def bind_host_is_safe(host: str | None) -> bool:
+    """True when ``host`` resolves to a loopback / unset address."""
+    if host is None:
+        return True
+    return host.strip().lower() in _LOCALHOST_HOSTS
+
+
+def assert_safe_to_start() -> None:
+    """Refuse to start when the server is exposed on a non-localhost
+    address without any auth configured.
+
+    Reads ``PARALLAX_BIND_HOST`` (default ``""`` → uvicorn's loopback
+    default). Skips the check when ``PARALLAX_ALLOW_OPEN_PUBLIC=1``,
+    which is the documented escape hatch for operators who really want an
+    open public listener (e.g. private network behind a separate firewall).
+    The override path emits a loud audit warning so post-incident log
+    readers can tell when the safety net was disabled.
+
+    Raises :class:`RuntimeError` so the failure surfaces during process
+    start rather than silently after the listener is up.
+
+    Note on env→bind coupling: ``PARALLAX_BIND_HOST`` is read here, but
+    uvicorn binds based on its own ``--host`` argument. The
+    ``parallax serve`` CLI subcommand pins them together; operators
+    invoking ``uvicorn parallax.server.app:app --host ...`` directly
+    (e.g. PM2 ecosystem files) must set ``PARALLAX_BIND_HOST`` themselves
+    to match the host, or the safety check is decoupled from reality.
+    """
+    raw_override = os.environ.get(PARALLAX_ALLOW_OPEN_PUBLIC_ENV, "").strip().lower()
+    if raw_override in ("1", "true"):
+        bind_host = os.environ.get(PARALLAX_BIND_HOST_ENV, "")
+        _log.warning(
+            "auth.startup.allow_open_public_override active "
+            "(%s=1, %s=%r) — safety check bypassed; ensure the network "
+            "boundary protects this listener.",
+            PARALLAX_ALLOW_OPEN_PUBLIC_ENV,
+            PARALLAX_BIND_HOST_ENV,
+            bind_host,
+        )
+        return
+    bind_host = os.environ.get(PARALLAX_BIND_HOST_ENV, "")
+    if bind_host_is_safe(bind_host):
+        return
+    if auth_configured() or multi_user_mode():
+        return
+    raise RuntimeError(
+        f"refusing to start: {PARALLAX_BIND_HOST_ENV}={bind_host!r} is non-localhost "
+        f"but neither {PARALLAX_TOKEN_ENV} nor {PARALLAX_MULTI_USER_ENV} is set. "
+        f"Set a token, bind to localhost, or set {PARALLAX_ALLOW_OPEN_PUBLIC_ENV}=1 "
+        "to opt out (NOT recommended in production)."
+    )
 
 
 def _expected_token() -> str:
