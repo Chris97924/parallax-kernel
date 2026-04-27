@@ -6,6 +6,43 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`parallax serve` CLI subcommand.** Closes the gap where the Dockerfile,
+  Railway config, and other deploy scripts referenced `parallax serve --host
+  ... --port ...` but no such subcommand existed. The new subcommand pins
+  `PARALLAX_BIND_HOST` to the supplied `--host` *before* importing the app,
+  so `assert_safe_to_start()` sees the real bind address. Operators who
+  invoke uvicorn directly (e.g. `pm2/ecosystem.config.js`) must still set
+  `PARALLAX_BIND_HOST` themselves to match — `pm2/ecosystem.config.js` now
+  documents and sets this explicitly. Two new tests in
+  `tests/server/test_server_safety.py::TestServeCliPinsBindHost` pin the
+  pin: one checks the auto-set, one checks `setdefault` semantics so an
+  operator-supplied env value is preserved.
+- **Audit warnings for the two safety escape hatches.**
+  - `PARALLAX_ALLOW_OPEN_PUBLIC=1` now logs `auth.startup.allow_open_public_override`
+    at WARN with the bind host. Post-incident log readers can tell when the
+    safety net was disabled.
+  - `PARALLAX_METRICS_PUBLIC=1` now logs `auth.metrics.public_override_active`
+    at WARN at app construction.
+  Tests pin both messages indirectly via the existing safety matrix.
+
+### Changed (post-review hardening)
+- **`tests/server/test_server_safety.py::TestMetricsAuthPosture` now scrubs
+  `PARALLAX_BIND_HOST` and `PARALLAX_ALLOW_OPEN_PUBLIC`.** A future test
+  reordering or env leakage could otherwise cause `_make_app` to raise on
+  an open-mode metrics test that would then look like a regression in
+  the metrics route. Now independent of bind-host config.
+- **New test pinning the `PARALLAX_METRICS_PUBLIC=1` semantics.**
+  `test_metrics_public_override_accepts_anonymous_AND_wrong_token` verifies
+  the override genuinely bypasses auth (a wrong token still gets 200), not
+  just absorbs missing headers — closes a security-reviewer finding.
+- **`docs/contract.md` covers the full `parallax/__init__.py` `__all__`
+  surface plus the documented `replay_events` exception** to the atomic
+  transition contract.
+- **README "Server / Production safety" section rewritten** to make the
+  env→bind decoupling explicit, list both launchers, and call out the
+  two override audit warnings operators should grep for.
+
+### Changed (initial pass)
 - **`transition_claim_state()` — canonical atomic claim state-change API.**
   New helper in `parallax.events` (also re-exported from `parallax`)
   that wraps `SELECT current state → is_allowed_transition → UPDATE

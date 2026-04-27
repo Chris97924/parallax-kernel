@@ -33,7 +33,10 @@ example against the implementation so contract drift is caught at CI.
 | `record_event` | `parallax.events` | ❌ | ✅ `<arbitrary>` | Lower-level append-only writer. Caller picks event_type. |
 | `reaffirm` | `parallax.sqlite_store` | ❌ | ✅ `<kind>.reaffirmed` | Audit only. |
 | `rebuild_index` | `parallax.index` | ✅ `index_state` (appends a new history row) | ❌ | Deterministic per DB snapshot, not DB-idempotent — see [README → Modules](../README.md#modules). |
-| `replay_events` | `parallax.replay` | ✅ `memories` / `claims` (rebuild) | ❌ | Reads `events`, applies create / state_changed events into a target connection. |
+| `replay_events` | `parallax.replay` | ✅ `memories` / `claims` (rebuild) | ❌ | Reads `events`, applies create / state_changed events into a target connection. **Deliberately bypasses `is_allowed_transition`** so historical transitions remain replayable across rule tightening — this is the one documented exception to the "atomic transition" contract above. |
+| `ingest_hook` | `parallax.hooks` | ✅ `memories` / `claims` (via ingest helpers) | ✅ `<kind>.created` / `<kind>.reaffirmed` | Thin wrapper over `ingest_memory` / `ingest_claim` for hook-based callers. Inherits all idempotency + audit behaviour of the underlying helpers. |
+| `ingest_from_json` | `parallax.hooks` | ✅ `memories` / `claims` | ✅ `<kind>.created` / `<kind>.reaffirmed` | JSON-payload variant of `ingest_hook`. |
+| `build_session_reminder` | `parallax.injector` | ❌ | ❌ | Read-only — composes a `<system-reminder>` block from existing rows. |
 | `backfill_creation_events` | `parallax.replay` | ❌ | ✅ `<kind>.created` | Synthesizes create events for pre-0.4.0 rows. Idempotent. |
 | `migrate_to_latest` | `parallax.migrations` | ✅ schema + ledger | ❌ | Each migration runs in its own explicit transaction. |
 | `migrate_down_to` | `parallax.migrations` | ✅ schema + ledger | ❌ | Symmetric `down()` for each migration. |

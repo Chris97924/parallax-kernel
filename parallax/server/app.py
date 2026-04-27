@@ -40,6 +40,7 @@ from parallax.server.auth import (
     assert_safe_to_start,
     auth_configured,
     bind_host_is_safe,
+    metrics_public_allowed,
 )
 from parallax.server.deps import DBFactory, default_db_factory
 from parallax.server.routes.backfill import router as backfill_router
@@ -148,6 +149,15 @@ def create_app(
                 PARALLAX_BIND_HOST_ENV,
                 bind_host,
             )
+
+    # Audit log when the /metrics public override is active so post-incident
+    # readers can see the route was deliberately exposed.
+    if metrics_public_allowed():
+        _log.warning(
+            "auth.metrics.public_override_active — /metrics is reachable "
+            "without a bearer token (PARALLAX_METRICS_PUBLIC=1). Ensure "
+            "the network boundary or upstream proxy gates the route."
+        )
 
     @app.get("/healthz", tags=["meta"])
     def healthz() -> dict[str, str]:

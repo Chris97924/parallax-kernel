@@ -4,6 +4,7 @@ Subcommands:
 
     parallax backup  <archive.tar.gz>
     parallax restore <archive.tar.gz> [--no-verify]
+    parallax serve   [--host HOST] [--port PORT] [--log-level LEVEL] [--reload]
     parallax inspect events   [--session <id>] [--limit N]
     parallax inspect retrieve "<query>" [--explain] [--level N] [--kind KIND]
     parallax inspect inject   [--session <id>] [--max N]
@@ -107,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Parallax Kernel CLI — backup / restore / inspect the canonical store.",
     )
     sub = parser.add_subparsers(
-        dest="command", metavar="{backup,restore,inspect,token}"
+        dest="command", metavar="{backup,restore,serve,inspect,token,router}"
     )
 
     p_backup = sub.add_parser("backup", help="Write a tar.gz backup archive.")
@@ -134,6 +135,41 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="URI",
         help="download archive from this URI before restoring (e.g. s3://bucket/key)",
+    )
+
+    # ----- serve ------------------------------------------------------------
+    # ``parallax serve`` is the canonical launcher: it pins
+    # ``PARALLAX_BIND_HOST`` to the same ``--host`` it hands to uvicorn so the
+    # safety check in ``parallax.server.auth.assert_safe_to_start`` sees the
+    # real bind address. Direct ``uvicorn parallax.server.app:app --host ...``
+    # invocation skips this coupling — operators using uvicorn directly must
+    # set PARALLAX_BIND_HOST themselves to match (PM2 ecosystem env block).
+    p_serve = sub.add_parser(
+        "serve",
+        help="Run the Parallax FastAPI server (uvicorn).",
+    )
+    p_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="bind address (default: 127.0.0.1 — loopback only)",
+    )
+    p_serve.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="bind port (default: 8765)",
+    )
+    p_serve.add_argument(
+        "--log-level",
+        dest="log_level",
+        default="info",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        help="uvicorn log level (default: info)",
+    )
+    p_serve.add_argument(
+        "--reload",
+        action="store_true",
+        help="enable uvicorn auto-reload (dev only — never in production)",
     )
 
     p_inspect = sub.add_parser(
@@ -884,6 +920,46 @@ def _cmd_router_backfill_apply(*, user_id: str, yes: bool) -> int:
 # ----- dispatcher -----------------------------------------------------------
 
 
+def _cmd_serve(*, host: str, port: int, log_level: str, reload: bool) -> int:
+    """Run the FastAPI server via uvicorn.
+
+    Pins ``PARALLAX_BIND_HOST`` to the same ``--host`` we pass to uvicorn so
+    that ``assert_safe_to_start()`` (called inside ``create_app`` at module
+    import) sees the actual bind address. Without this pin, an operator
+    could run ``parallax serve --host 0.0.0.0`` while ``PARALLAX_BIND_HOST``
+    is unset, bypassing the safety check while uvicorn still binds publicly.
+    """
+    # Set the env BEFORE we import uvicorn / parallax.server.app — module
+    # import triggers create_app(), which reads the env. setdefault preserves
+    # an explicit operator-supplied value (paranoid override).
+    os.environ.setdefault("PARALLAX_BIND_HOST", host)
+    if os.environ["PARALLAX_BIND_HOST"] != host:
+        print(
+            f"warning: PARALLAX_BIND_HOST={os.environ['PARALLAX_BIND_HOST']!r} "
+            f"differs from --host {host!r}; the safety check will see the "
+            f"env value, but uvicorn will bind to {host!r}. Operators must "
+            "keep these in sync.",
+            file=sys.stderr,
+        )
+    try:
+        import uvicorn  # noqa: PLC0415 — lazy import; only needed for serve
+    except ImportError as exc:
+        print(
+            f"parallax serve requires uvicorn: install with "
+            f"`pip install '.[server]'` ({exc})",
+            file=sys.stderr,
+        )
+        return _EXIT_USER_ERROR
+    uvicorn.run(
+        "parallax.server.app:app",
+        host=host,
+        port=port,
+        log_level=log_level,
+        reload=reload,
+    )
+    return _EXIT_OK
+
+
 def _dispatch(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -894,6 +970,13 @@ def _dispatch(argv: Sequence[str] | None) -> int:
             args.archive,
             verify=not args.no_verify,
             download_uri=args.download_from,
+        )
+    if args.command == "serve":
+        return _cmd_serve(
+            host=args.host,
+            port=args.port,
+            log_level=args.log_level,
+            reload=args.reload,
         )
     if args.command == "token":
         if args.token_cmd == "create":
