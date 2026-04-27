@@ -351,6 +351,61 @@ def test_build_payload_skips_keys_that_collide_with_reserved_gauges(
             registry.pop(k, None)
 
 
+# ---------------------------------------------------------------------------
+# DB-resilience: /metrics must survive a broken SQLite path in non-multi-user modes
+# ---------------------------------------------------------------------------
+
+
+def test_metrics_open_mode_survives_broken_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Open mode: /metrics returns 200 even when PARALLAX_DB_PATH is invalid.
+
+    The DB is never opened in open mode; a bad path must not 500 the scrape.
+    """
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", "/nonexistent/path/that/cannot/be/created/test.db")
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    monkeypatch.delenv("PARALLAX_TOKEN", raising=False)
+    monkeypatch.delenv("PARALLAX_MULTI_USER", raising=False)
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+    from parallax.server.routes import metrics as metrics_route
+
+    metrics_route._reset_cache_for_tests()
+
+    app = create_app()
+    with TestClient(app) as tc:
+        resp = tc.get("/metrics")
+    assert resp.status_code == 200, f"expected 200, got {resp.status_code}: {resp.text}"
+
+
+def test_metrics_single_token_mode_survives_broken_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Single-token mode: /metrics returns 200 with correct bearer even when DB is broken.
+
+    Token comparison is a constant-time string compare — no DB needed.
+    """
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", "/nonexistent/path/that/cannot/be/created/test.db")
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    monkeypatch.setenv("PARALLAX_TOKEN", "test-secret-token")
+    monkeypatch.delenv("PARALLAX_MULTI_USER", raising=False)
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+    from parallax.server.routes import metrics as metrics_route
+
+    metrics_route._reset_cache_for_tests()
+
+    app = create_app()
+    with TestClient(app) as tc:
+        resp = tc.get("/metrics", headers={"Authorization": "Bearer test-secret-token"})
+    assert resp.status_code == 200, f"expected 200, got {resp.status_code}: {resp.text}"
+
+
 def test_build_payload_skips_keys_that_sanitize_to_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
