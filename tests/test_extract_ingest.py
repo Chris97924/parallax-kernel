@@ -55,7 +55,7 @@ def test_three_claims_persisted_and_retrievable(conn: sqlite3.Connection) -> Non
             "direct:chris",
             "chris",
         )
-        row = claim_by_content_hash(conn, ch)
+        row = claim_by_content_hash(conn, ch, user_id="chris")
         assert row is not None
         assert row["claim_id"] == cid
 

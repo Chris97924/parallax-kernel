@@ -7,6 +7,17 @@ version monotonically per ``index_name``, and stamps the watermark to the
 most recent ``event_id`` in the events log (so a later replay-from-events
 implementation can resume from a known point). Full per-event replay is
 deferred to Phase 5.
+
+Determinism vs. idempotency
+---------------------------
+:func:`rebuild_index` is **deterministic in derived content** — given the
+same DB snapshot, the inserted row carries the same ``doc_count``,
+``source_watermark``, and ``state``. It is **not DB-idempotent**: each
+call appends a new ``index_state`` row at ``version = MAX(version) + 1``.
+The ``(index_name, version)`` history is preserved on purpose so an
+operator can audit when a rebuild ran and what the corpus looked like at
+that moment. Acceptance harness ``04_rebuild_identical.sql`` asserts the
+content-stable invariants while tolerating the version bump.
 """
 
 from __future__ import annotations
