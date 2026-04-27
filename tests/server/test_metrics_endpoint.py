@@ -233,3 +233,159 @@ def test_metrics_collapsed_walk_matches_public_api(
     assert collapsed["discrepancy_rate"] == pytest.approx(public_discrepancy)
     assert collapsed["checksum_consistency"] == pytest.approx(public_consistency)
     assert collapsed["log_records_total"] == 3.0  # 3 parsed records
+
+
+# ---------------------------------------------------------------------------
+# Metric name sanitization
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_metric_name_strips_label_selector() -> None:
+    from parallax.server.routes.metrics import _sanitize_metric_name
+
+    result = _sanitize_metric_name("parallax_deprecated_kind_total{kind='bug'}")
+    assert result == "deprecated_kind_total"
+
+
+def test_sanitize_metric_name_strips_prefix() -> None:
+    from parallax.server.routes.metrics import _sanitize_metric_name
+
+    assert _sanitize_metric_name("parallax_foo_total") == "foo_total"
+
+
+def test_sanitize_metric_name_passthrough() -> None:
+    from parallax.server.routes.metrics import _sanitize_metric_name
+
+    assert _sanitize_metric_name("dedup_hit_total") == "dedup_hit_total"
+
+
+def test_build_payload_sanitizes_registry_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Counter keys with embedded label selectors don't crash _build_payload()."""
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+    from parallax.obs.metrics import get_counter, registry
+    from parallax.server.routes import metrics as metrics_route
+
+    metrics_route._reset_cache_for_tests()
+
+    bad_key = "parallax_test_label_total{kind='x'}"
+    get_counter(bad_key)
+    try:
+        payload = metrics_route._build_payload()
+        assert "parallax_test_label_total" in payload
+        assert "{" not in payload.split("parallax_test_label_total")[1].split("\n")[0]
+    finally:
+        registry.pop(bad_key, None)
+
+
+def test_sanitize_metric_name_collapses_underscores() -> None:
+    """Multi-character invalid runs collapse to a single ``_`` (no ``__``)."""
+    from parallax.server.routes.metrics import _sanitize_metric_name
+
+    # Three hyphens -> three "_" -> collapsed to one "_"
+    assert _sanitize_metric_name("parallax_x---y") == "x_y"
+    # Mixed invalid (space, dot, hyphen) -> single "_"
+    assert _sanitize_metric_name("parallax_a b.c-d") == "a_b_c_d"
+
+
+def test_sanitize_metric_name_handles_empty_after_strip() -> None:
+    """Pure-prefix or pure-label inputs collapse to empty — caller must filter.
+
+    Documents the boundary: ``_sanitize_metric_name`` does not invent a
+    fallback name. ``_build_payload`` skips empty results — without that
+    guard, ``Gauge('parallax_', ...)`` would silently register (the empty
+    suffix is spec-valid as ``parallax_``), and a SECOND such key would
+    crash the scrape with prometheus_client's duplicate-name check.
+    """
+    from parallax.server.routes.metrics import _sanitize_metric_name
+
+    assert _sanitize_metric_name("parallax_") == ""
+    assert _sanitize_metric_name("{kind='bug'}") == ""
+    assert _sanitize_metric_name("___") == ""
+
+
+def test_build_payload_skips_keys_that_collide_with_reserved_gauges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An in-house counter whose sanitized name collides with a reserved
+    shadow gauge must NOT crash the scrape — the in-house loop skips it
+    so the explicit shadow-gauge registration at the bottom of
+    ``_build_payload`` doesn't trip ``Duplicated timeseries``.
+    """
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+    from parallax.obs.metrics import get_counter, registry
+    from parallax.server.routes import metrics as metrics_route
+
+    metrics_route._reset_cache_for_tests()
+
+    # Pre-register inside try so a setup failure doesn't pollute the registry
+    # for downstream tests (per python-reviewer + critic test-fixture nit).
+    bad_keys = ["shadow_discrepancy_rate", "parallax_shadow_log_records_total"]
+    try:
+        for k in bad_keys:
+            get_counter(k)
+        # Must not raise; the explicit shadow gauge registration that follows
+        # the in-house loop also must succeed (i.e. no duplicate name).
+        payload = metrics_route._build_payload()
+        # Reserved gauges still emit exactly once each (from the explicit
+        # shadow-gauge block, not from the in-house mirror).
+        for reserved in (
+            "parallax_shadow_discrepancy_rate",
+            "parallax_shadow_log_records_total",
+        ):
+            help_lines = [ln for ln in payload.splitlines() if ln.startswith(f"# HELP {reserved} ")]
+            assert len(help_lines) == 1, f"{reserved} emitted {len(help_lines)}× (want 1)"
+    finally:
+        for k in bad_keys:
+            registry.pop(k, None)
+
+
+def test_build_payload_skips_keys_that_sanitize_to_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defends ``_build_payload`` against the empty-name latent crash path.
+
+    Registers two pathological in-house keys that both collapse to the
+    empty string after sanitization. Without the skip-guard at
+    ``metrics.py``'s in-house-counter loop, the second registration would
+    raise ``ValueError`` from prometheus_client (``Duplicated timeseries``)
+    and 500 the scrape. With the guard, both are silently skipped and the
+    scrape body still parses.
+    """
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+    from parallax.obs.metrics import get_counter, registry
+    from parallax.server.routes import metrics as metrics_route
+
+    metrics_route._reset_cache_for_tests()
+
+    bad_keys = ["parallax_", "{kind='only-label'}"]
+    for k in bad_keys:
+        get_counter(k)
+    try:
+        payload = metrics_route._build_payload()
+        # No bare ``parallax_`` followed by space (HELP/TYPE/value) emitted.
+        # Allow ``parallax_`` only as a substring of longer valid names.
+        for line in payload.splitlines():
+            if line.startswith("# HELP parallax_ ") or line.startswith("# TYPE parallax_ "):
+                raise AssertionError(f"emitted bare parallax_ line: {line!r}")
+            if line.startswith("parallax_ "):
+                raise AssertionError(f"emitted bare parallax_ value line: {line!r}")
+    finally:
+        for k in bad_keys:
+            registry.pop(k, None)

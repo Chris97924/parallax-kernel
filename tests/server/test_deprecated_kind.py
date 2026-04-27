@@ -47,7 +47,7 @@ class TestBugKindDeprecation:
     ) -> None:
         from parallax.obs.metrics import get_counter
 
-        counter = get_counter("parallax_deprecated_kind_total{kind='bug'}")
+        counter = get_counter("deprecated_kind_bug_total")
         before = counter.value
 
         monkeypatch.setenv("MEMORY_ROUTER", "true")
