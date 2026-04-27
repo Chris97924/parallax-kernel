@@ -9,6 +9,7 @@ package root:
         memory_by_content_hash, claim_by_content_hash,
         Source, Memory, Claim, Event,
         record_event, record_memory_reaffirmed, record_claim_state_changed,
+        transition_claim_state,
         is_allowed_transition, rebuild_index,
         content_hash, normalize, reaffirm,
         migrate_to_latest, migration_plan, MigrationPlan, MigrationStep,
@@ -20,6 +21,7 @@ from parallax.events import (
     record_claim_state_changed,
     record_event,
     record_memory_reaffirmed,
+    transition_claim_state,
 )
 from parallax.hashing import content_hash, normalize
 from parallax.hooks import ingest_from_json, ingest_hook
@@ -98,6 +100,7 @@ __all__ = [
     "record_event",
     "record_memory_reaffirmed",
     "record_claim_state_changed",
+    "transition_claim_state",
     "is_allowed_transition",
     "MEMORY_TRANSITIONS",
     "CLAIM_TRANSITIONS",

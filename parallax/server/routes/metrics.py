@@ -7,9 +7,21 @@ exposes WS-3 shadow observability gauges:
 * ``parallax_shadow_checksum_consistency`` — current rolling-1h consistency
 * ``parallax_shadow_log_records_total`` — record count in the rolling window
 
-Unauthenticated by design: Prometheus scrape jobs typically don't carry bearer
-tokens, and the metric values are aggregate floats with no PII or query
-contents. Same posture as ``/healthz``.
+Auth posture
+------------
+* **Open mode** (no ``PARALLAX_TOKEN``, no ``PARALLAX_MULTI_USER``):
+  unauthenticated. Same posture as ``/healthz``.
+* **Auth configured**: requires the same bearer token as the rest of the
+  API. Operators who deliberately want an open scrape endpoint (e.g.
+  behind a private network or Cloudflare Access policy) can opt in by
+  setting ``PARALLAX_METRICS_PUBLIC=1``.
+
+The values themselves carry no PII or query contents — only aggregate
+floats — but exposing them publicly still leaks ingest cadence, retrieve
+volume, shadow discrepancy rate, and service-existence signals that an
+attacker can use for reconnaissance. Defaulting to fail-closed when auth
+is available keeps that signal off the public internet without
+operators having to remember to gate it.
 
 Disk reads are cached for ``_CACHE_TTL_SECONDS`` so concurrent scrapes don't
 re-walk the JSONL files. Tests can reset the cache via
@@ -18,11 +30,13 @@ re-walk the JSONL files. Tests can reset the cache via
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -31,6 +45,12 @@ from prometheus_client import (
 )
 
 from parallax.obs.metrics import registry as _inhouse_registry
+from parallax.server.auth import (
+    bearer_security,
+    metrics_auth_required,
+    require_auth,
+)
+from parallax.server.deps import get_conn
 from parallax.shadow.discrepancy import (
     is_record_consistent,
     load_records,
@@ -40,6 +60,9 @@ from parallax.shadow.discrepancy import (
 __all__ = ["router"]
 
 router = APIRouter(tags=["meta"])
+
+_BEARER_DEP = Depends(bearer_security)
+_CONN_DEP = Depends(get_conn)
 
 # Cache scrape results so a Prometheus 15s scrape interval doesn't flog disk.
 # 30s TTL is a deliberate over-shoot so two consecutive scrapes hit the cache.
@@ -162,6 +185,18 @@ def _build_payload() -> str:
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-def get_metrics() -> PlainTextResponse:
-    """Prometheus scrape endpoint. Unauthenticated, no PII, aggregate values only."""
+def get_metrics(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = _BEARER_DEP,
+    conn: sqlite3.Connection = _CONN_DEP,
+) -> PlainTextResponse:
+    """Prometheus scrape endpoint.
+
+    Auth is enforced when :func:`parallax.server.auth.metrics_auth_required`
+    returns True — i.e. some auth mode is configured AND the operator has
+    not opted into ``PARALLAX_METRICS_PUBLIC=1``. In open mode the route
+    behaves like ``/healthz`` and skips the bearer check entirely.
+    """
+    if metrics_auth_required():
+        require_auth(request, creds, conn)
     return PlainTextResponse(_build_payload(), media_type=CONTENT_TYPE_LATEST)

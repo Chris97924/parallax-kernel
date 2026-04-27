@@ -38,20 +38,21 @@ Everything re-exported from the `parallax` package root:
 | `memories_by_user` | function | List memories for a user, optional `state` filter. |
 | `claims_by_user` | function | List claims for a user, optional `state` filter. |
 | `claims_by_subject` | function | List a user's claims filtered by exact subject. |
-| `memory_by_content_hash` | function | Lookup one memory by content_hash (`Optional[dict]`). |
-| `claim_by_content_hash` | function | Lookup one claim by content_hash (`Optional[dict]`). |
+| `memory_by_content_hash` | function | Lookup one memory by `(content_hash, user_id)` (`Optional[dict]`). `user_id` is keyword-only and required. |
+| `claim_by_content_hash` | function | Lookup one claim by `(content_hash, user_id)` (`Optional[dict]`). `user_id` is keyword-only and required. |
 | `record_event` | function | Append a raw event row to the immutable event log. |
 | `record_memory_reaffirmed` | function | Bump a memory's `reaffirm_count` and emit a `memory_reaffirmed` event. |
-| `record_claim_state_changed` | function | Apply a claim state transition and append the matching event. |
+| `record_claim_state_changed` | function | Append a `claim.state_changed` event. **Does not mutate `claims.state`** — pair with the matching `UPDATE` or use `transition_claim_state`. |
+| `transition_claim_state` | function | Atomically apply a claim transition: `SELECT current → is_allowed_transition → UPDATE claims → record_event` in a single transaction. |
 | `is_allowed_transition` | function | Check `(from_state, to_state)` against the per-object transition table. |
-| `MEMORY_TRANSITIONS` / `CLAIM_TRANSITIONS` / `SOURCE_TRANSITIONS` / `DECISION_TRANSITIONS` | frozenset | Allowed lifecycle transitions per object kind. |
-| `rebuild_index` | function | Idempotent rebuild of `index_state` for a named search index. |
+| `MEMORY_TRANSITIONS` / `CLAIM_TRANSITIONS` / `SOURCE_TRANSITIONS` / `DECISION_TRANSITIONS` | dict[str, frozenset[str]] | Allowed lifecycle transitions per object kind: `state -> {allowed next states}`. |
+| `rebuild_index` | function | Deterministic rebuild of `index_state` for a named search index. **Not DB-idempotent**: each call appends a new `index_state` row at `version = MAX(version) + 1`; derived content (`doc_count`, `state`, `source_watermark`) is stable across repeat calls on the same DB snapshot. |
 | `target_ref_exists` | function | Existence check used to reject orphan events/decisions at the boundary. |
 | `VALID_TARGET_KINDS` / `DECISION_TARGET_KINDS` / `TargetKind` | constants | Target-kind allow-lists for events and decisions. |
 | `parallax_info` / `ParallaxInfo` | function / dataclass | Runtime introspection (version, modules, schema). |
 | `health` | function | Operational snapshot (db path, table counts, journal mode, last error). |
 | `Source` / `Memory` / `Claim` / `Event` | dataclass | Frozen record types used by the storage layer. |
-| `__version__` | str | Package version (currently `0.5.0`). |
+| `__version__` | str | Package version (currently `0.6.0`). |
 
 ## Modules
 
@@ -66,7 +67,7 @@ Everything re-exported from the `parallax` package root:
 | `parallax.events` | Append-only event recorders + reaffirm / state-change helpers. |
 | `parallax.transitions` | Per-object allowed-transition tables + `is_allowed_transition()`. |
 | `parallax.validators` | Target-kind allow-lists + `target_ref_exists()` for orphan rejection. |
-| `parallax.index` | `rebuild_index()` — deterministic, idempotent rebuild of `index_state`. |
+| `parallax.index` | `rebuild_index()` — deterministic rebuild of `index_state`. Each call appends a new history row; derived content (`doc_count`, `state`) is stable across repeats on the same DB snapshot. |
 | `parallax.telemetry` | Stdlib-only structured events + in-memory metrics + `health()`. |
 | `parallax.introspection` | `parallax_info()` / `ParallaxInfo` runtime metadata. |
 | `parallax.obs.log` / `parallax.obs.metrics` | Lower-level logging + metrics primitives backing `telemetry`. |
@@ -75,17 +76,38 @@ Everything re-exported from the `parallax` package root:
 ## State Machine
 
 Lifecycle transitions are explicit and centralised in `parallax.transitions`.
-Each object kind ships a frozenset of allowed `(from_state, to_state)`
-pairs; `record_claim_state_changed()` (and friends) call
-`is_allowed_transition()` before mutating, so any disallowed transition
-raises before it can pollute the event log.
+Each object kind ships a `dict[str, frozenset[str]]` mapping a state to its
+allowed next states. The audit log and the row mutation are split across two
+APIs so callers can pick the level of guarantee they need:
+
+- `record_claim_state_changed()` — appends an audit event only. Does not
+  validate the transition and does not touch `claims.state`. Use this when
+  the row mutation is already happening elsewhere in the same transaction
+  (the pattern `parallax.extract.review` follows for its review-queue
+  flow, which has stricter `from_state='pending'` semantics).
+- `transition_claim_state()` — the canonical atomic API. Reads the current
+  state, calls `is_allowed_transition()`, runs `UPDATE claims SET state=?,
+  updated_at=? WHERE claim_id=? AND state=?` (with a TOCTOU rowcount
+  guard), and records the event — all in one transaction. The event log
+  and `claims.state` cannot drift.
 
 ```python
-from parallax import CLAIM_TRANSITIONS, is_allowed_transition
+from parallax import (
+    CLAIM_TRANSITIONS,
+    is_allowed_transition,
+    transition_claim_state,
+)
 
-assert ("pending", "confirmed") in CLAIM_TRANSITIONS
+# CLAIM_TRANSITIONS is a dict mapping state -> frozenset of allowed next states.
+assert "confirmed" in CLAIM_TRANSITIONS["pending"]
 assert is_allowed_transition("claim", "pending", "confirmed")
+
+# transition_claim_state mutates the row AND emits the audit event.
+# event_id = transition_claim_state(conn, claim_id=cid, to_state="confirmed")
 ```
+
+See [`docs/contract.md`](./docs/contract.md) for which public APIs mutate
+state vs. which only write to the event log.
 
 ## Acceptance Harness
 
@@ -118,10 +140,23 @@ python -m pytest --cov-report=html     # local exploration
 
 ## Observability
 
-Parallax ships with a single-file, stdlib-only telemetry module
-(`parallax/telemetry.py`, under 200 lines). No extra dependencies, no
-Prometheus exporter -- Prometheus is intentionally out of scope (YAGNI);
-call `snapshot()` and adapt to whatever scrape format the caller needs.
+`parallax.telemetry` is the in-process structured-event + metrics module
+and remains stdlib-only (under 200 lines, zero third-party imports). It
+exposes `snapshot()` so callers can adapt the in-memory state to any
+scrape format without the kernel taking on an exporter dependency.
+
+Since v0.6.0 the kernel also ships a thin Prometheus-format adapter
+(`parallax.server.routes.metrics`) wired to `prometheus_client`. The
+adapter is a separate layer — it imports `prometheus_client` at the
+HTTP boundary, not inside `parallax.telemetry` — so projects that embed
+the kernel without the FastAPI server still pay no dependency cost
+beyond the four core libs. `prometheus_client` is in the core
+`pyproject.toml` dependencies because the server routes are part of the
+default install; it is not pulled into the telemetry module itself.
+
+The Prometheus endpoint is auth-gated when a token is configured (see
+the **Server / Production safety** section below). In open mode it
+remains unauthenticated to match the `/healthz` posture.
 
 ### Structured events
 
@@ -205,6 +240,35 @@ See [`docs/shadow-write.md`](./docs/shadow-write.md) for the log record
 format and the nightly `pytest -m llm_integration` procedure that hits
 OpenRouter for real.
 
+## Server / Production safety
+
+Three environment variables gate how the FastAPI server (`parallax.serve`)
+behaves when exposed beyond localhost:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `PARALLAX_TOKEN` | unset | Single-token bearer auth on every non-`/healthz` route. Unset = open mode. |
+| `PARALLAX_MULTI_USER` | `0` | When `1`, swap to per-user token lookup against the `api_tokens` table (see m0009). |
+| `PARALLAX_BIND_HOST` | `""` (uvicorn loopback) | Inspected at startup; the app **refuses to start** if this is set to a non-loopback address while no auth mode is configured. Override with `PARALLAX_ALLOW_OPEN_PUBLIC=1` (NOT recommended in production). |
+| `PARALLAX_METRICS_PUBLIC` | unset | When `1`, opt /metrics out of auth even when a token is configured. Use only when a private network or Cloudflare Access policy already protects the route. |
+
+### Production checklist
+
+Before wiring the server to a public hostname / Cloudflare Tunnel:
+
+1. Set `PARALLAX_TOKEN` (single-tenant) or `PARALLAX_MULTI_USER=1` (multi-tenant).
+2. Confirm `assert_safe_to_start()` accepts your bind address — start the
+   process once with the production env and verify it boots cleanly.
+3. Decide /metrics posture:
+   - **Default (recommended)**: leave `PARALLAX_METRICS_PUBLIC` unset so
+     Prometheus must scrape with the bearer token.
+   - **Sidecar / private subnet**: set `PARALLAX_METRICS_PUBLIC=1` only if
+     the network already bounds who can reach the route.
+4. Never expose `/docs` / `/redoc` publicly — they are off by default;
+   `PARALLAX_DOCS_ENABLED=1` is for local dev only.
+5. Verify backups: `parallax backup create --to /path/...` round-trips
+   through `restore` against an empty DB before you cut over.
+
 ## Testing
 
 ```bash
@@ -213,7 +277,7 @@ python -m pytest tests/acceptance/  # SQL acceptance harness only
 ```
 
 GitHub Actions runs the suite on Python 3.11 for every PR and every push
-to `main` (`.github/workflows/tests.yml`).
+to `main` or `main-next` (`.github/workflows/tests.yml`).
 
 ## License
 

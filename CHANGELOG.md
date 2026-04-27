@@ -5,7 +5,81 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`transition_claim_state()` — canonical atomic claim state-change API.**
+  New helper in `parallax.events` (also re-exported from `parallax`)
+  that wraps `SELECT current state → is_allowed_transition → UPDATE
+  claims SET state, updated_at → record_event` in a single transaction
+  with a TOCTOU rowcount guard. Closes the gap left by
+  `record_claim_state_changed()`, which only writes the audit event and
+  does NOT mutate `claims.state`. Optional `expected_user_id` argument
+  enables a defensive cross-tenant guard for multi-user routes. Existing
+  callers that already do their own UPDATE in the same transaction
+  (e.g. `parallax.extract.review._transition`, which adds a stricter
+  `from_state='pending'` rule) continue to use the lower-level
+  `record_claim_state_changed` and are unaffected.
+- **Production-safety guards for the FastAPI server.** Three new env
+  vars and one boot-time refusal:
+  - `PARALLAX_BIND_HOST` is read at app construction. When set to a
+    non-loopback address while `PARALLAX_TOKEN` and `PARALLAX_MULTI_USER`
+    are both unset, `assert_safe_to_start()` raises `RuntimeError` and
+    the process refuses to come up. Override with
+    `PARALLAX_ALLOW_OPEN_PUBLIC=1` (NOT recommended).
+  - `PARALLAX_METRICS_PUBLIC=1` opts `/metrics` out of auth even when a
+    token is configured (private network / Cloudflare Access scenarios).
+- **`docs/contract.md`.** New table mapping every public API to
+  whether it mutates storage, logs an event, or is read-only — closes
+  the README-vs-implementation drift that had `record_claim_state_changed`
+  documented as "applies a transition" while in fact only writing an
+  event. Linked from `README.md` "State Machine".
+
 ### Changed
+- **`memory_by_content_hash` and `claim_by_content_hash` require
+  `user_id` (keyword-only, mandatory).** Previously these queried
+  `WHERE content_hash = ?` only. Memories are stored with a unique
+  index on `(content_hash, user_id)` and the hashing layer does NOT
+  fold `user_id` into the memory hash — meaning the same content under
+  two different users coexists with the same `content_hash`, and a
+  hash-only lookup could return another tenant's row. Claim hashes are
+  already user-scoped via ADR-005 (v0.5.0-pre1) so the risk there is
+  mathematical not practical, but the API is symmetric for defence in
+  depth. Calling without `user_id` now raises `TypeError` rather than
+  silently leaking. Internal callers updated; the public-API surface
+  pins `__all__` so `parallax/__init__.py` still re-exports both.
+- **`/metrics` is auth-gated by default when a token is configured.**
+  Previously the route was unconditionally unauthenticated. In open mode
+  (no `PARALLAX_TOKEN`, no `PARALLAX_MULTI_USER`) it stays open to
+  match `/healthz`; with auth configured it now requires the same
+  bearer the rest of the API does, unless `PARALLAX_METRICS_PUBLIC=1`
+  is set explicitly. Closes a reconnaissance vector where ingest
+  cadence, retrieve volume, and shadow-discrepancy rate would leak to
+  any unauthenticated caller on a public listener.
+- **`record_claim_state_changed()` docstring clarifies the contract.**
+  It writes the audit event only and does NOT mutate `claims.state`.
+  The README "State Machine" example was corrected (the old
+  `("pending", "confirmed") in CLAIM_TRANSITIONS` snippet was buggy
+  because `CLAIM_TRANSITIONS` is `dict[str, frozenset[str]]`, not a
+  set of tuples) and the section now points readers at
+  `transition_claim_state()` for the mutation path.
+- **`rebuild_index()` README/docstring honest about idempotency.** It
+  is *deterministic in derived content* — `doc_count`, `state`, and
+  `source_watermark` stay stable on repeat calls — but it is *not
+  DB-idempotent*: each call appends a new `index_state` row at
+  `version = MAX(version) + 1`. The history is intentional. Acceptance
+  harness `04_rebuild_identical.sql` already permits the version bump.
+- **CI now triggers on push to `main-next`.** `tests.yml` previously
+  ran on push to `main` only; since `main-next` has been the default
+  branch, direct commits there were skipping the test job. Push trigger
+  now lists `[main, main-next]`; PR trigger remains all-branch.
+- **README version table no longer claims `__version__ = "0.5.0"`.**
+  `pyproject.toml` and `parallax/__init__.py` were already at `0.6.0`;
+  this was a stale documentation cell. Telemetry section also rewritten
+  — `parallax.telemetry` remains stdlib-only, but `prometheus_client`
+  was already a core dep (used by the `/metrics` HTTP adapter), and the
+  README now reflects that boundary instead of the old "Prometheus
+  intentionally out of scope" line.
+
+### Changed (pre-existing entry)
 - **Migration m0012 — `crosswalk.dpkg_doc_id` renamed to `aphelion_doc_id`.**
   Completes the DPKG → Aphelion rebrand on the Parallax side (Aphelion v0.4.0
   shipped 2026-04-24 with `aphelion_spec_version` wire break). Uses

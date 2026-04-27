@@ -109,26 +109,44 @@ def claims_by_subject(
 
 
 def memory_by_content_hash(
-    conn: sqlite3.Connection, content_hash: str
+    conn: sqlite3.Connection, content_hash: str, *, user_id: str
 ) -> dict | None:
+    """Lookup one memory by ``(content_hash, user_id)``.
+
+    ``user_id`` is keyword-only and required (v0.6.1+). The unique index
+    on ``memories(content_hash, user_id)`` permits the same content_hash
+    to live under multiple users — looking up by hash alone would risk
+    returning a different user's row to the caller. ``content_hash`` for
+    memories is currently NOT user-scoped at the hashing layer
+    (``sha256(normalize(title || summary || vault_path))``), so the
+    user_id filter at lookup time is the security boundary.
+    """
     rows = query(
-        conn, "SELECT * FROM memories WHERE content_hash = ? LIMIT 1", (content_hash,)
+        conn,
+        "SELECT * FROM memories WHERE content_hash = ? AND user_id = ? LIMIT 1",
+        (content_hash, user_id),
     )
     return dict(rows[0]) if rows else None
 
 
 def claim_by_content_hash(
-    conn: sqlite3.Connection, content_hash: str
+    conn: sqlite3.Connection, content_hash: str, *, user_id: str
 ) -> dict | None:
-    """Lookup a claim by its pre-computed content_hash.
+    """Lookup a claim by ``(content_hash, user_id)``.
 
-    Post-ADR-005 (v0.5.0-pre1) the hash is user-scoped:
-    ``sha256(normalize(subject || predicate || object || source_id || user_id))``.
-    Callers constructing the hash externally must pass all five parts; a
-    4-part hash built with the pre-v0.5.0-pre1 formula will silently miss.
+    ``user_id`` is keyword-only and required (v0.6.1+). Post-ADR-005
+    (v0.5.0-pre1) the claim hash is already user-scoped
+    (``sha256(normalize(subject || predicate || object || source_id || user_id))``),
+    so a cross-user collision is mathematically negligible. The explicit
+    user_id filter is kept anyway as defence-in-depth and to keep the
+    memory/claim lookup APIs symmetric. Callers constructing the hash
+    externally must pass all five parts; a 4-part hash built with the
+    pre-v0.5.0-pre1 formula will silently miss.
     """
     rows = query(
-        conn, "SELECT * FROM claims WHERE content_hash = ? LIMIT 1", (content_hash,)
+        conn,
+        "SELECT * FROM claims WHERE content_hash = ? AND user_id = ? LIMIT 1",
+        (content_hash, user_id),
     )
     return dict(rows[0]) if rows else None
 
