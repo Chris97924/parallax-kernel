@@ -45,7 +45,7 @@ router = APIRouter(
 )
 
 _log = _get_logger("parallax.server.routes.query")
-_deprecated_kind_counter = _get_counter("parallax_deprecated_kind_total{kind='bug'}")
+_deprecated_kind_counter = _get_counter("deprecated_kind_bug_total")
 
 
 def _hit_to_dto(hit: R.RetrievalHit, *, level: int) -> RetrievalHitDTO:
@@ -118,9 +118,7 @@ def _dispatch_with_router(
     try:
         query_type = resolve(f"RetrieveKind.{kind}")
     except UnroutableQueryError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     request = RouterQueryRequest(
         query_type=query_type,
@@ -135,13 +133,10 @@ def _dispatch_with_router(
     try:
         evidence = mem_router.query(request)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return [
-        _router_hit_to_dto(hit, level=level, query_type=query_type.value)
-        for hit in evidence.hits
+        _router_hit_to_dto(hit, level=level, query_type=query_type.value) for hit in evidence.hits
     ]
 
 
@@ -172,13 +167,9 @@ def _dispatch(
             detail="timeline kind requires 'since' and 'until' ISO-8601 params",
         )
     try:
-        return R.by_timeline(
-            conn, user_id=user_id, since=since, until=until, limit=limit
-        )
+        return R.by_timeline(conn, user_id=user_id, since=since, until=until, limit=limit)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("", response_model=QueryResponse)
@@ -190,12 +181,8 @@ def get_query(
     q: Annotated[str, Query(description="path / subject for file / entity kinds")] = "",
     level: Annotated[int, Query(ge=1, le=3, description="progressive disclosure tier")] = 1,
     limit: Annotated[int, Query(ge=1, le=200)] = 10,
-    since: Annotated[
-        str | None, Query(description="ISO-8601 lower bound (timeline)")
-    ] = None,
-    until: Annotated[
-        str | None, Query(description="ISO-8601 upper bound (timeline)")
-    ] = None,
+    since: Annotated[str | None, Query(description="ISO-8601 lower bound (timeline)")] = None,
+    until: Annotated[str | None, Query(description="ISO-8601 upper bound (timeline)")] = None,
 ) -> QueryResponse:
     # Multi-user mode: the authenticated principal on request.state.user_id
     # overrides any query-string ``user_id`` (which is logged as a leak
