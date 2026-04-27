@@ -138,12 +138,30 @@ def assert_safe_to_start() -> None:
     default). Skips the check when ``PARALLAX_ALLOW_OPEN_PUBLIC=1``,
     which is the documented escape hatch for operators who really want an
     open public listener (e.g. private network behind a separate firewall).
+    The override path emits a loud audit warning so post-incident log
+    readers can tell when the safety net was disabled.
 
     Raises :class:`RuntimeError` so the failure surfaces during process
     start rather than silently after the listener is up.
+
+    Note on env→bind coupling: ``PARALLAX_BIND_HOST`` is read here, but
+    uvicorn binds based on its own ``--host`` argument. The
+    ``parallax serve`` CLI subcommand pins them together; operators
+    invoking ``uvicorn parallax.server.app:app --host ...`` directly
+    (e.g. PM2 ecosystem files) must set ``PARALLAX_BIND_HOST`` themselves
+    to match the host, or the safety check is decoupled from reality.
     """
     raw_override = os.environ.get(PARALLAX_ALLOW_OPEN_PUBLIC_ENV, "").strip().lower()
     if raw_override in ("1", "true"):
+        bind_host = os.environ.get(PARALLAX_BIND_HOST_ENV, "")
+        _log.warning(
+            "auth.startup.allow_open_public_override active "
+            "(%s=1, %s=%r) — safety check bypassed; ensure the network "
+            "boundary protects this listener.",
+            PARALLAX_ALLOW_OPEN_PUBLIC_ENV,
+            PARALLAX_BIND_HOST_ENV,
+            bind_host,
+        )
         return
     bind_host = os.environ.get(PARALLAX_BIND_HOST_ENV, "")
     if bind_host_is_safe(bind_host):

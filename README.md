@@ -242,32 +242,41 @@ OpenRouter for real.
 
 ## Server / Production safety
 
-Three environment variables gate how the FastAPI server (`parallax.serve`)
-behaves when exposed beyond localhost:
+Five environment variables gate how the FastAPI server behaves when
+exposed beyond localhost:
 
 | Env var | Default | Effect |
 |---|---|---|
 | `PARALLAX_TOKEN` | unset | Single-token bearer auth on every non-`/healthz` route. Unset = open mode. |
 | `PARALLAX_MULTI_USER` | `0` | When `1`, swap to per-user token lookup against the `api_tokens` table (see m0009). |
-| `PARALLAX_BIND_HOST` | `""` (uvicorn loopback) | Inspected at startup; the app **refuses to start** if this is set to a non-loopback address while no auth mode is configured. Override with `PARALLAX_ALLOW_OPEN_PUBLIC=1` (NOT recommended in production). |
-| `PARALLAX_METRICS_PUBLIC` | unset | When `1`, opt /metrics out of auth even when a token is configured. Use only when a private network or Cloudflare Access policy already protects the route. |
+| `PARALLAX_BIND_HOST` | `""` (loopback) | Read by `assert_safe_to_start()` at app construction. The app **refuses to start** if this is a non-loopback address while no auth mode is configured. **Important**: this env is the *self-attested* bind address — uvicorn binds based on its own `--host` arg. The `parallax serve` CLI pins the env to its `--host` automatically; direct `uvicorn parallax.server.app:app --host X` invocation must set this env separately to match (see `pm2/ecosystem.config.js` for the pattern). |
+| `PARALLAX_ALLOW_OPEN_PUBLIC` | unset | When `1`, bypass the bind-host safety check. Logs a loud audit warning at startup. NOT recommended for production. |
+| `PARALLAX_METRICS_PUBLIC` | unset | When `1`, opt `/metrics` out of auth even when a token is configured. Logs a loud audit warning at startup. Use only when a private network or Cloudflare Access policy already protects the route. |
+
+### Two ways to launch the server
+
+| Launcher | Bind-host pin |
+|---|---|
+| `parallax serve --host 0.0.0.0 --port 8080` | Automatic — the CLI sets `PARALLAX_BIND_HOST` to match `--host` before importing the app. |
+| `uvicorn parallax.server.app:app --host 0.0.0.0 --port 8080` (direct) | Manual — you must set `PARALLAX_BIND_HOST=0.0.0.0` in the launching environment, or `assert_safe_to_start()` reads the unset default and skips the check. |
 
 ### Production checklist
 
 Before wiring the server to a public hostname / Cloudflare Tunnel:
 
 1. Set `PARALLAX_TOKEN` (single-tenant) or `PARALLAX_MULTI_USER=1` (multi-tenant).
-2. Confirm `assert_safe_to_start()` accepts your bind address — start the
-   process once with the production env and verify it boots cleanly.
-3. Decide /metrics posture:
+2. Decide your launcher (CLI vs direct uvicorn) and ensure `PARALLAX_BIND_HOST` reflects the actual bind address (CLI pins it for you).
+3. Boot once with the production env and verify the safety check passes cleanly. Look for the `auth.startup.allow_open_public_override` warning in logs — if it appears, your override is active and the safety net is OFF.
+4. Decide `/metrics` posture:
    - **Default (recommended)**: leave `PARALLAX_METRICS_PUBLIC` unset so
      Prometheus must scrape with the bearer token.
    - **Sidecar / private subnet**: set `PARALLAX_METRICS_PUBLIC=1` only if
-     the network already bounds who can reach the route.
-4. Never expose `/docs` / `/redoc` publicly — they are off by default;
+     the network already bounds who can reach the route. Look for the
+     `auth.metrics.public_override_active` warning to confirm the route is open.
+5. Never expose `/docs` / `/redoc` publicly — they are off by default;
    `PARALLAX_DOCS_ENABLED=1` is for local dev only.
-5. Verify backups: `parallax backup create --to /path/...` round-trips
-   through `restore` against an empty DB before you cut over.
+6. Verify backups: `parallax backup <archive.tar.gz>` round-trips
+   through `parallax restore` against an empty DB before you cut over.
 
 ## Testing
 
