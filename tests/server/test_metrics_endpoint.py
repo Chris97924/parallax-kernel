@@ -356,6 +356,15 @@ def test_build_payload_skips_keys_that_collide_with_reserved_gauges(
 # ---------------------------------------------------------------------------
 
 
+def _setup_broken_db_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Common env-var setup for broken-DB resilience tests."""
+    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
+    monkeypatch.setenv("PARALLAX_DB_PATH", "/nonexistent/path/that/cannot/be/created/test.db")
+    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
+
+
 def test_metrics_open_mode_survives_broken_db(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -363,13 +372,9 @@ def test_metrics_open_mode_survives_broken_db(
 
     The DB is never opened in open mode; a bad path must not 500 the scrape.
     """
-    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
-    monkeypatch.setenv("PARALLAX_DB_PATH", "/nonexistent/path/that/cannot/be/created/test.db")
-    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
-    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    _setup_broken_db_env(tmp_path, monkeypatch)
     monkeypatch.delenv("PARALLAX_TOKEN", raising=False)
     monkeypatch.delenv("PARALLAX_MULTI_USER", raising=False)
-    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
 
     from parallax.server.routes import metrics as metrics_route
 
@@ -388,13 +393,9 @@ def test_metrics_single_token_mode_survives_broken_db(
 
     Token comparison is a constant-time string compare — no DB needed.
     """
-    monkeypatch.setenv("SHADOW_LOG_DIR", str(tmp_path / "shadow"))
-    monkeypatch.setenv("PARALLAX_DB_PATH", "/nonexistent/path/that/cannot/be/created/test.db")
-    monkeypatch.setenv("PARALLAX_VAULT_PATH", str(tmp_path / "vault"))
-    monkeypatch.setenv("PARALLAX_SCHEMA_PATH", str(_REPO_ROOT / "parallax" / "schema.sql"))
+    _setup_broken_db_env(tmp_path, monkeypatch)
     monkeypatch.setenv("PARALLAX_TOKEN", "test-secret-token")
     monkeypatch.delenv("PARALLAX_MULTI_USER", raising=False)
-    (tmp_path / "shadow").mkdir(parents=True, exist_ok=True)
 
     from parallax.server.routes import metrics as metrics_route
 

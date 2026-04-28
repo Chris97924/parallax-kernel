@@ -5,6 +5,9 @@ from __future__ import annotations
 import pathlib
 import sqlite3
 
+import pytest
+import ulid
+
 from parallax.events import record_claim_state_changed
 from parallax.hashing import content_hash
 from parallax.ingest import ingest_claim, ingest_memory
@@ -328,11 +331,9 @@ class TestBackfillRollback:
     def test_backfill_creation_events_rolls_back_on_claim_loop_error(
         self,
         conn: sqlite3.Connection,
-        monkeypatch: "pytest.MonkeyPatch",
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """All-or-nothing: if the claim loop raises, memory inserts also roll back."""
-        import pytest
-
         # Insert 2 memory rows directly (no create event) so the memory loop succeeds.
         _seed_source(conn, "direct:u", "u")
         mem_helper = TestBackfillCreationEvents()
@@ -346,7 +347,7 @@ class TestBackfillRollback:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
 
         # Pre-insert an event occupying a known ID so a duplicate INSERT raises.
-        _DUPLICATE_ID = "01DUPLICATE000000000000000A"
+        _DUPLICATE_ID = "01AAAAAAAAAAAAAAAAAAAAAAA0"
         conn.execute(
             """INSERT INTO events
                    (event_id, user_id, actor, event_type, target_kind, target_id,
@@ -360,8 +361,6 @@ class TestBackfillRollback:
         # Patch ULID inside the replay module: first 2 calls (memory loop) return
         # unique IDs; the 3rd call (first claim) returns the duplicate to force a
         # PRIMARY KEY IntegrityError inside the single transaction.
-        import ulid as _ulid_module
-
         _call_count = {"n": 0}
 
         class _StubULID:
@@ -370,12 +369,12 @@ class TestBackfillRollback:
                 if _call_count["n"] >= 3:
                     self._val = _DUPLICATE_ID
                 else:
-                    self._val = f"01UNIQUE{_call_count['n']:018d}"
+                    self._val = f"01AAAAAAAA{_call_count['n']:016d}"
 
             def __str__(self) -> str:
                 return self._val
 
-        monkeypatch.setattr(_ulid_module, "ULID", _StubULID)
+        monkeypatch.setattr(ulid, "ULID", _StubULID)
 
         with pytest.raises(sqlite3.IntegrityError):
             backfill_creation_events(conn)

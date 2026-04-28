@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from contextlib import closing
 from typing import cast
 
 from fastapi import APIRouter, Depends, Request
@@ -283,12 +284,9 @@ def get_metrics(
                 DBFactory,
                 getattr(request.app.state, "db_factory", default_db_factory),
             )
-            conn = factory()
-            try:
+            with closing(factory()) as conn:
                 require_auth(request, creds, conn)
-            finally:
-                conn.close()
         else:
             # Single-token path: require_auth never reads conn.
-            require_auth(request, creds, None)  # type: ignore[arg-type]
+            require_auth(request, creds, None)
     return PlainTextResponse(_build_payload(), media_type=CONTENT_TYPE_LATEST)
