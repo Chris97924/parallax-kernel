@@ -31,9 +31,9 @@ re-walk the JSONL files. Tests can reset the cache via
 from __future__ import annotations
 
 import re
-import sqlite3
 import threading
 import time
+from typing import cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
@@ -50,9 +50,10 @@ from parallax.obs.metrics import registry as _inhouse_registry
 from parallax.server.auth import (
     bearer_security,
     metrics_auth_required,
+    multi_user_mode,
     require_auth,
 )
-from parallax.server.deps import get_conn
+from parallax.server.deps import DBFactory, default_db_factory
 from parallax.shadow.discrepancy import (
     is_record_consistent,
     load_records,
@@ -78,7 +79,6 @@ _RESERVED_GAUGE_SUFFIXES = frozenset(
 router = APIRouter(tags=["meta"])
 
 _BEARER_DEP = Depends(bearer_security)
-_CONN_DEP = Depends(get_conn)
 
 # Cache scrape results so a Prometheus 15s scrape interval doesn't flog disk.
 # 30s TTL is a deliberate over-shoot so two consecutive scrapes hit the cache.
@@ -261,7 +261,6 @@ def _build_payload() -> str:
 def get_metrics(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = _BEARER_DEP,
-    conn: sqlite3.Connection = _CONN_DEP,
 ) -> PlainTextResponse:
     """Prometheus scrape endpoint.
 
@@ -269,7 +268,27 @@ def get_metrics(
     returns True — i.e. some auth mode is configured AND the operator has
     not opted into ``PARALLAX_METRICS_PUBLIC=1``. In open mode the route
     behaves like ``/healthz`` and skips the bearer check entirely.
+
+    The SQLite connection is opened lazily and only in multi-user mode,
+    where token lookup actually needs the DB. Single-token mode and open
+    mode never touch the database, so a DB-open failure cannot 500 the
+    scrape and remove observability.
     """
     if metrics_auth_required():
-        require_auth(request, creds, conn)
+        if multi_user_mode():
+            # Honor the test-override contract from ``parallax.server.deps.get_conn``
+            # so ``create_app(db_factory=...)`` fixtures still scope multi-user
+            # token lookups correctly.
+            factory = cast(
+                DBFactory,
+                getattr(request.app.state, "db_factory", default_db_factory),
+            )
+            conn = factory()
+            try:
+                require_auth(request, creds, conn)
+            finally:
+                conn.close()
+        else:
+            # Single-token path: require_auth never reads conn.
+            require_auth(request, creds, None)  # type: ignore[arg-type]
     return PlainTextResponse(_build_payload(), media_type=CONTENT_TYPE_LATEST)
