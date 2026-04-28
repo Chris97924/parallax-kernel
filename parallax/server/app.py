@@ -45,6 +45,7 @@ from parallax.server.auth import (
 from parallax.server.deps import DBFactory, default_db_factory
 from parallax.server.lifespan import parallax_lifespan
 from parallax.server.middleware.dual_read_snapshot import install_middleware
+from parallax.server.routes.admin.circuit_breaker import router as admin_circuit_breaker_router
 from parallax.server.routes.backfill import router as backfill_router
 from parallax.server.routes.export import router as export_router
 from parallax.server.routes.ingest import router as ingest_router
@@ -177,6 +178,7 @@ def create_app(
     app.include_router(export_router)
     app.include_router(backfill_router)
     app.include_router(metrics_router)
+    app.include_router(admin_circuit_breaker_router)
 
     if os.environ.get("PARALLAX_VIEWER_ENABLED", "0") == "1":
         from parallax.server.viewer import router as viewer_router

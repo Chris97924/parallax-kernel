@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from parallax.obs.log import get_logger
 from parallax.router.aphelion_stub import AphelionUnreachableError
+from parallax.router.circuit_breaker import get_breaker_state
 from parallax.router.config import is_dual_read_enabled
 from parallax.router.contracts import DualReadResult, QueryRequest
 from parallax.router.discrepancy_live import (
@@ -220,3 +221,9 @@ class DualReadRouter:
         record_dual_read_outcome(user_id=user_id, outcome=outcome)
         if self._live_counter is not None:
             self._live_counter.record(user_id=user_id, outcome=outcome)
+        # T1.5: feed the rolling-window circuit breaker. Only count outcomes
+        # where the secondary was actually attempted (not "skipped").
+        if outcome != "skipped":
+            get_breaker_state().record_unreachable_observation(
+                observed_unreachable=(outcome == "aphelion_unreachable")
+            )

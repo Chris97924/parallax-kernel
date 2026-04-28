@@ -4,21 +4,22 @@ Covers:
 - Fresh singleton is not tripped.
 - Singleton identity (same object from two calls).
 - Thread-safe singleton (50 threads all get same id).
-- record_unreachable_observation is a no-op in stub.
 - reset() clears tripped/tripped_at.
 - No os.environ mutation across all public methods.
+
+Stub-only tests retired in T1.5 — full rolling-window tests live in
+``test_circuit_breaker_rolling_window.py``.
 """
 
 from __future__ import annotations
 
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
-from parallax.router.circuit_breaker import BreakerState, get_breaker_state
-
+from parallax.router.circuit_breaker import get_breaker_state
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,23 +77,11 @@ def test_breaker_singleton_thread_safe():
 
 
 @pytest.mark.unit
-def test_record_unreachable_observation_is_noop_in_stub():
-    state = get_breaker_state()
-    for _ in range(20):
-        state.record_unreachable_observation(observed_unreachable=True)
-        state.record_unreachable_observation(observed_unreachable=False)
-    # State must remain unchanged (T1.4 stub — no-op)
-    assert state.is_tripped() is False
-    assert state.tripped is False
-    assert state.tripped_at is None
-
-
-@pytest.mark.unit
 def test_reset_clears_state():
     state = get_breaker_state()
     # Manually set tripped state (simulating what T1.5 would do)
     state.tripped = True
-    state.tripped_at = datetime.now(tz=timezone.utc)
+    state.tripped_at = datetime.now(UTC)
     assert state.is_tripped() is True
     assert state.tripped_at is not None
 
