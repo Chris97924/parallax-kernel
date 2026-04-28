@@ -43,6 +43,8 @@ from parallax.server.auth import (
     metrics_public_allowed,
 )
 from parallax.server.deps import DBFactory, default_db_factory
+from parallax.server.lifespan import parallax_lifespan
+from parallax.server.middleware.dual_read_snapshot import install_middleware
 from parallax.server.routes.backfill import router as backfill_router
 from parallax.server.routes.export import router as export_router
 from parallax.server.routes.ingest import router as ingest_router
@@ -64,23 +66,17 @@ def _install_error_handlers(app: FastAPI) -> None:
     """
 
     @app.exception_handler(RequestValidationError)
-    async def _on_validation_error(
-        _request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _on_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
         # `exc.errors()` can carry raw ValueError instances in `ctx`
         # (e.g. from a custom field_validator). Route through FastAPI's
         # jsonable_encoder so they're coerced to strings before serialisation.
         return JSONResponse(
             status_code=422,
-            content=jsonable_encoder(
-                {"error": "validation_error", "detail": exc.errors()}
-            ),
+            content=jsonable_encoder({"error": "validation_error", "detail": exc.errors()}),
         )
 
     @app.exception_handler(sqlite3.Error)
-    async def _on_sqlite_error(
-        _request: Request, exc: sqlite3.Error
-    ) -> JSONResponse:
+    async def _on_sqlite_error(_request: Request, exc: sqlite3.Error) -> JSONResponse:
         # Log the full exception server-side for diagnosis, but never send
         # str(exc) to the client — SQLite errors leak table/column names
         # and sometimes row values that help an attacker map the schema.
@@ -114,7 +110,10 @@ def create_app(
     # endpoint gives attackers a free enumeration of every route and
     # schema. Set ``PARALLAX_DOCS_ENABLED=1`` for local dev.
     docs_enabled = os.environ.get("PARALLAX_DOCS_ENABLED", "").strip() in (
-        "1", "true", "True", "yes",
+        "1",
+        "true",
+        "True",
+        "yes",
     )
     app = FastAPI(
         title="Parallax Kernel",
@@ -123,6 +122,7 @@ def create_app(
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,
         openapi_url="/openapi.json" if docs_enabled else None,
+        lifespan=parallax_lifespan,
     )
     app.state.db_factory = db_factory or default_db_factory
     app.state.settings = dict(settings or {})
@@ -185,6 +185,7 @@ def create_app(
         _log.info("parallax viewer enabled at /viewer")
 
     _install_error_handlers(app)
+    install_middleware(app)
 
     return app
 
