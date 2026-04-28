@@ -188,12 +188,20 @@ class SQLiteGate:
             SQLiteGate._pragma_applied.add(conn_id)
 
     def _db_file(self) -> str | None:
-        """Return the database file path from ``PRAGMA database_list``, or None."""
+        """Return the database file path from ``PRAGMA database_list``, or None.
+
+        Cursor lifecycle is held inside ``self._lock`` per the Q4 invariant —
+        sqlite3 connections are not thread-safe, so a pragma cursor that
+        crosses the lock boundary can race a parallel SELECT in another
+        thread and raise ProgrammingError. Mirrors the pattern in
+        :meth:`_execute_op` and :meth:`start_background_checkpoint`.
+        """
         try:
-            cur = self._conn.cursor()
-            cur.execute("PRAGMA database_list")
-            rows = cur.fetchall()
-            cur.close()
+            with self._lock:
+                cur = self._conn.cursor()
+                cur.execute("PRAGMA database_list")
+                rows = cur.fetchall()
+                cur.close()
             for row in rows:
                 # (seq, name, file) — we want the 'main' database file
                 if row[1] == "main" and row[2]:

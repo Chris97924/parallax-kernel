@@ -43,14 +43,6 @@ DRAIN_TIMEOUT_SECONDS: Final[float] = 900.0  # 15 minutes
 DRAIN_POLL_INTERVAL_SECONDS: Final[float] = 0.5
 
 
-def _get_or_create_counter(name: str, doc: str) -> Counter:
-    """Return an existing Counter or create a new one (re-import safe)."""
-    try:
-        return Counter(name, doc)
-    except ValueError:
-        return Counter.__class__.__new__(Counter)  # type: ignore[misc]  # fallback
-
-
 # prometheus_client raises ValueError on duplicate registration.
 try:
     drain_timeout_total: Counter = Counter(

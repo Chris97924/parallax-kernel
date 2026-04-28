@@ -35,7 +35,13 @@ All T0–T1.5 branches must be merged to `main-next` before starting the 48h SLO
 
   ```bash
   cd /path/to/parallax
-  python -c "from parallax.router.crosswalk_backfill import backfill_crosswalk; backfill_crosswalk()"
+  python -c "
+import os, sqlite3
+from parallax.router.crosswalk_backfill import backfill_crosswalk
+conn = sqlite3.connect(os.environ['PARALLAX_DB_PATH'])
+print(backfill_crosswalk(conn, user_id='chris'))
+conn.close()
+"
   ```
 
   Verify with:
@@ -148,7 +154,13 @@ If `CrosswalkMissRateHigh` fires **or** the h+48 reading exceeds 5%:
 1. Re-run backfill:
 
    ```bash
-   python -c "from parallax.router.crosswalk_backfill import backfill_crosswalk; backfill_crosswalk()"
+   python -c "
+import os, sqlite3
+from parallax.router.crosswalk_backfill import backfill_crosswalk
+conn = sqlite3.connect(os.environ['PARALLAX_DB_PATH'])
+print(backfill_crosswalk(conn, user_id='chris'))
+conn.close()
+"
    ```
 
 2. Restart the 48h window timer from zero.
@@ -158,12 +170,17 @@ If `CrosswalkMissRateHigh` fires **or** the h+48 reading exceeds 5%:
 
 ## Flag Flip Procedure (Post-48h-SLO Clearance)
 
-### Step 1 — Enable for Chris-only allowlist (canary)
+### Step 1 — Canary flip (single-user deployment)
+
+Parallax is single-user (chris-only) per Q14 — there is no per-user
+allowlist. The "canary" is the full 24h observation under `DUAL_READ=true`
+on the chris-only deployment. If/when multi-user federation lands, a
+`DUAL_READ_ALLOWLIST` env var will be added; for M3a it is intentionally
+absent (YAGNI). Future-multi-user prep is tracked separately.
 
 ```bash
 # Edit ZenBook EnvironmentFile:
 DUAL_READ=true
-DUAL_READ_ALLOWLIST=chris
 
 sudo systemctl daemon-reload
 sudo systemctl restart parallax
@@ -172,7 +189,7 @@ sudo systemctl restart parallax
 Record canary start time:
 
 ```bash
-echo "Canary start (DUAL_READ=true, allowlist=chris): $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+echo "Canary start (DUAL_READ=true, single-user chris): $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >> /var/log/parallax/m3-slo-window.log
 ```
 
@@ -199,15 +216,17 @@ parallax_drain_timeout_total"
 
 If all green, proceed to Step 3. If any red, see **Rollback Procedure**.
 
-### Step 3 — Full allowlist flip → 72h DoD window
+### Step 3 — Promote canary to 72h DoD window
+
+After 24h canary green, the same `DUAL_READ=true` setting becomes the
+production state — no env-var change needed because there is no allowlist
+to widen on a single-user deployment. Just record the transition.
 
 ```bash
-# Remove allowlist restriction (or set to "*" for all users):
-DUAL_READ=true
-# Remove or empty DUAL_READ_ALLOWLIST
+# Sanity-check the env is still set:
+sudo systemctl show parallax --property=Environment | grep DUAL_READ
 
-sudo systemctl daemon-reload
-sudo systemctl restart parallax
+# Service restart is NOT required at this step — flag is already live.
 ```
 
 ```bash
@@ -328,7 +347,13 @@ Note: force-kill causes in-flight requests to 502, but the rollback completes. I
 
 ```bash
 # Re-run backfill with a fresh batch:
-python -c "from parallax.router.crosswalk_backfill import backfill_crosswalk; backfill_crosswalk()"
+python -c "
+import os, sqlite3
+from parallax.router.crosswalk_backfill import backfill_crosswalk
+conn = sqlite3.connect(os.environ['PARALLAX_DB_PATH'])
+print(backfill_crosswalk(conn, user_id='chris'))
+conn.close()
+"
 
 # If miss rate stays high after backfill, inspect ingest pipeline:
 curl -s http://127.0.0.1:8765/metrics | grep parallax_ingest
@@ -367,7 +392,7 @@ Copy-paste for ops log. Mark `[x]` as each step completes.
 
 ### Canary flag flip (Step 1)
 
-- [ ] `DUAL_READ=true`, `DUAL_READ_ALLOWLIST=chris` set in EnvironmentFile
+- [ ] `DUAL_READ=true` set in EnvironmentFile (single-user deployment, no allowlist)
 - [ ] Service daemon-reload + restart completed
 - [ ] Canary start time recorded
 - [ ] First dual-read request verified in metrics (discrepancy_rate metric non-null)
@@ -383,8 +408,7 @@ Copy-paste for ops log. Mark `[x]` as each step completes.
 
 ### Full flip (Step 3)
 
-- [ ] `DUAL_READ_ALLOWLIST` removed/emptied; `DUAL_READ=true` retained
-- [ ] Service daemon-reload + restart completed
+- [ ] `DUAL_READ=true` confirmed live (no env change needed for single-user)
 - [ ] 72h DoD window start time recorded
 - [ ] Grafana dashboard pinned to 72h window
 
