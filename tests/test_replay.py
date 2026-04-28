@@ -320,3 +320,68 @@ class TestInPlaceReplay:
 
         row = conn.execute("SELECT state FROM claims WHERE claim_id = ?", (cid,)).fetchone()
         assert row["state"] == "confirmed"
+
+
+class TestBackfillRollback:
+    """backfill_creation_events must roll back entirely on mid-loop error."""
+
+    def test_backfill_creation_events_rolls_back_on_claim_loop_error(
+        self,
+        conn: sqlite3.Connection,
+        monkeypatch: "pytest.MonkeyPatch",
+    ) -> None:
+        """All-or-nothing: if the claim loop raises, memory inserts also roll back."""
+        import pytest
+
+        # Insert 2 memory rows directly (no create event) so the memory loop succeeds.
+        _seed_source(conn, "direct:u", "u")
+        mem_helper = TestBackfillCreationEvents()
+        mem_helper._insert_raw_memory(conn, "rb1.md")
+        mem_helper._insert_raw_memory(conn, "rb2.md")
+
+        # Insert 1 claim row directly (no create event).
+        mem_helper._insert_raw_claim(conn, "rb-subj")
+
+        # Verify the events table is empty before the call.
+        assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+        # Pre-insert an event occupying a known ID so a duplicate INSERT raises.
+        _DUPLICATE_ID = "01DUPLICATE000000000000000A"
+        conn.execute(
+            """INSERT INTO events
+                   (event_id, user_id, actor, event_type, target_kind, target_id,
+                    payload_json, approval_tier, created_at, session_id)
+               VALUES (?, 'u', 'system:test', 'test.sentinel', NULL, NULL, '{}',
+                       NULL, datetime('now'), NULL)""",
+            (_DUPLICATE_ID,),
+        )
+        conn.commit()
+
+        # Patch ULID inside the replay module: first 2 calls (memory loop) return
+        # unique IDs; the 3rd call (first claim) returns the duplicate to force a
+        # PRIMARY KEY IntegrityError inside the single transaction.
+        import ulid as _ulid_module
+
+        _call_count = {"n": 0}
+
+        class _StubULID:
+            def __init__(self) -> None:
+                _call_count["n"] += 1
+                if _call_count["n"] >= 3:
+                    self._val = _DUPLICATE_ID
+                else:
+                    self._val = f"01UNIQUE{_call_count['n']:018d}"
+
+            def __str__(self) -> str:
+                return self._val
+
+        monkeypatch.setattr(_ulid_module, "ULID", _StubULID)
+
+        with pytest.raises(sqlite3.IntegrityError):
+            backfill_creation_events(conn)
+
+        # Full rollback: only the pre-inserted sentinel event must remain.
+        event_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        assert event_count == 1, (
+            f"Expected 1 (sentinel only) events after rollback, got {event_count}"
+        )
