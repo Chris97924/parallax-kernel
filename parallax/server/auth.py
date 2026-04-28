@@ -247,16 +247,16 @@ def _resolve_multi_user_token(
 def require_auth(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = _BEARER_DEP,
-    conn: sqlite3.Connection = _CONN_DEP,
+    conn: sqlite3.Connection | None = _CONN_DEP,
 ) -> str:
     """FastAPI dependency: validates the Authorization header.
 
     * Open mode (``PARALLAX_TOKEN`` unset AND multi-user off) → returns
       ``"open"`` without inspecting the request.
     * Single-token mode → ``Authorization: Bearer <PARALLAX_TOKEN>``
-      with a constant-time compare.
+      with a constant-time compare. ``conn`` is not used in this branch.
     * Multi-user mode → bearer → sha256 → ``api_tokens`` lookup; sets
-      ``request.state.user_id`` on success.
+      ``request.state.user_id`` on success. ``conn`` must be non-None.
     """
     if multi_user_mode():
         if creds is None or (creds.scheme or "").lower() != "bearer":
@@ -272,6 +272,7 @@ def require_auth(
                 detail="missing bearer token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        assert conn is not None, "multi-user mode requires a DB connection"
         user_id = _resolve_multi_user_token(request, supplied, conn)
         return f"user:{user_id}"
 
