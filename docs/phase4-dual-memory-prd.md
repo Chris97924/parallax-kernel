@@ -194,7 +194,10 @@ semantic-constrained hybrid composer:
 
 ## 5. 驗收標準（Phase 4 完成條件）
 
-1. [ ] US-001 ~ US-010 全部 `passes: true`
+1. [ ] **Phase 4 shipped 範圍** 全部 `passes: true`：US-001、US-002、US-003、US-004、US-005、US-006、US-009、US-010
+   - US-007 (Reconciliation) **DEFERRED to v0.4+**（見 §3 US-007 redirect note）— **不列入** Phase 4 DoD
+   - US-008 per-QueryType 觀測指標：M2 WS-3 (`parallax_shadow_*`) + M3 §6 (`parallax_dual_read_*` / `parallax_arbitration_*` / `parallax_aphelion_unreachable_rate` / `parallax_crosswalk_miss_rate`) gauges 已 cover；per-QueryType cut **DEFERRED to v0.4**（見 §3 US-008 redirect note）— Phase 4 DoD 採 M2/M3 gauges 為觀測替代物
+   - US-011 (Dual-read 路由器) + US-012 (欄位仲裁 engine) 為 **M3 milestone**，DoD 與驗收條件由 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) §6 管，**不列入** Phase 4 DoD
 2. [ ] 測試覆蓋率 ≥ 80%（維持現有標準）
 3. [ ] a2a 端 canary 跑滿 7 天，無 P0 regression
 4. [ ] 觀測 dashboard 顯示：crosswalk miss rate < 5%，conflict rate < 1%
@@ -219,8 +222,10 @@ semantic-constrained hybrid composer:
 
 - Week 1: US-001 (crosswalk) + US-002 (router types) + US-003 (ports)
 - Week 2: US-004 (envelope) + US-005 (hybrid executor) + US-006 (conflict)
-- Week 3: US-007 (reconcile) + US-008 (metrics) + US-009 (a2a integration)
+- Week 3: US-009 (a2a integration) — US-007/US-008 deferred (見 §3 + §5 carve-out)
 - Week 4: US-010 (docs) + canary + 驗收
+
+US-011/US-012 為 M3 milestone，timeline 由 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) 管，不列入本 Phase 4 估計。
 
 ---
 
