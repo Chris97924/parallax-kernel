@@ -142,16 +142,22 @@ semantic-constrained hybrid composer:
 - [ ] Envelope `conflict_flags` 帶 event_id
 - [ ] 測試：產生衝突 → 確認 event 寫入 + envelope flag
 
-### US-007: Reconciliation mode（離線）
-- [ ] Reconciliation 能力（Lane D-3 scope）— Lane D-1 contract freeze 未納入，實作入口待 routing layer 定義（候選：獨立 port 或 `BackfillPort` 的 mode）
-- [ ] 產出 diff report（兩邊都有 vs 只有一邊 vs 衝突）
-- [ ] CLI: `parallax reconcile --since=...`
-- [ ] 測試：已知 diff 能被偵測
+### US-007: Reconciliation mode（離線）— **DEFERRED to v0.4+**
 
-### US-008: 觀測指標
-- [ ] 每 `QueryType` 記錄：hit rate、crosswalk miss rate、stale index rate、conflict rate、hydrate latency
-- [ ] 結構化 log（JSON）
-- [ ] 測試：metrics emit 正確
+> **2026-04-27 update:** This US-007 (Reconciliation) is **superseded** in numbering by M3's renumbered work (see `.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`). The reconciliation capability remains a roadmap item but moves to v0.4+ scope. M3 Lane C uses **US-011 = Dual-read router** and **US-012 = Field arbitration engine** (the 2026-04-27 milestone spec; see plan §2 Q6 for context).
+
+- [ ] [DEFERRED] Reconciliation 能力（Lane D-3 scope）— Lane D-1 contract freeze 未納入，實作入口待 routing layer 定義（候選：獨立 port 或 `BackfillPort` 的 mode）
+- [ ] [DEFERRED] 產出 diff report（兩邊都有 vs 只有一邊 vs 衝突）
+- [ ] [DEFERRED] CLI: `parallax reconcile --since=...`
+- [ ] [DEFERRED] 測試：已知 diff 能被偵測
+
+### US-008: 觀測指標 — **PARTIALLY ABSORBED into M2 WS-3 + M3 DoD gauges**
+
+> **2026-04-27 update:** This US-008 (per-QueryType metrics) is **superseded** in numbering. M2 WS-3 (PR #21) shipped `parallax_shadow_*` gauges; M3 ships `parallax_dual_read_*` + `parallax_arbitration_*` + `parallax_aphelion_unreachable_rate` + `parallax_crosswalk_miss_rate` (see ralplan §6). The "per-QueryType" cut of these metrics remains a v0.4 follow-up. M3 Lane C arbitration engine is at **US-012** (renumbered).
+
+- [ ] [PARTIAL → M2 WS-3 + M3 §6] 每 `QueryType` 記錄：hit rate、crosswalk miss rate、stale index rate、conflict rate、hydrate latency
+- [ ] [DEFERRED to v0.4] 結構化 log（JSON）per QueryType cut
+- [ ] [DEFERRED to v0.4] 測試：metrics emit 正確（per-QueryType cut）
 
 ### US-009: a2a 端整合（讀路由）
 - [ ] a2a 端加 `MEMORY_ROUTER=parallax` feature flag
@@ -163,6 +169,17 @@ semantic-constrained hybrid composer:
 - [ ] `docs/dual-memory-router.md`：架構圖 + query type 對照表 + 衝突仲裁表
 - [ ] README 新增「Phase 4: Dual-Memory Router」區塊
 - [ ] 範例 notebook / snippet：每個 QueryType 的典型呼叫
+
+### US-011: Dual-read 路由器（M3, 2026-04-27 milestone）
+- 完整 spec 與 task breakdown 在 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) §3
+- DoD: 72h `discrepancy_rate < 0.1%` + `aphelion_unreachable_rate < 0.5%` + `write_error_rate < 0.02%` + `crosswalk_miss_rate < 5%`
+- Status: BLOCKED on M2 squash + Q1-Q16 answers (see ralplan §10)
+
+### US-012: 欄位仲裁 engine（M3, 2026-04-27 milestone）
+- 完整 spec 與 task breakdown 在 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) §3
+- DoD: 72h `arbitration_conflict_rate < 1%`
+- Status: BLOCKED on US-011 ship + 24h canary clean + Q1 (granularity) answer
+- Antithesis open (Architect): consider ship US-011-only first, harvest 2 weeks divergence corpus, redesign US-012 from data
 
 ---
 
@@ -177,7 +194,10 @@ semantic-constrained hybrid composer:
 
 ## 5. 驗收標準（Phase 4 完成條件）
 
-1. [ ] US-001 ~ US-010 全部 `passes: true`
+1. [ ] **Phase 4 shipped 範圍** 全部 `passes: true`：US-001、US-002、US-003、US-004、US-005、US-006、US-009、US-010
+   - US-007 (Reconciliation) **DEFERRED to v0.4+**（見 §3 US-007 redirect note）— **不列入** Phase 4 DoD
+   - US-008 per-QueryType 觀測指標：M2 WS-3 (`parallax_shadow_*`) + M3 §6 (`parallax_dual_read_*` / `parallax_arbitration_*` / `parallax_aphelion_unreachable_rate` / `parallax_crosswalk_miss_rate`) gauges 已 cover；per-QueryType cut **DEFERRED to v0.4**（見 §3 US-008 redirect note）— Phase 4 DoD 採 M2/M3 gauges 為觀測替代物
+   - US-011 (Dual-read 路由器) + US-012 (欄位仲裁 engine) 為 **M3 milestone**，DoD 與驗收條件由 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) §6 管，**不列入** Phase 4 DoD
 2. [ ] 測試覆蓋率 ≥ 80%（維持現有標準）
 3. [ ] a2a 端 canary 跑滿 7 天，無 P0 regression
 4. [ ] 觀測 dashboard 顯示：crosswalk miss rate < 5%，conflict rate < 1%
@@ -202,8 +222,10 @@ semantic-constrained hybrid composer:
 
 - Week 1: US-001 (crosswalk) + US-002 (router types) + US-003 (ports)
 - Week 2: US-004 (envelope) + US-005 (hybrid executor) + US-006 (conflict)
-- Week 3: US-007 (reconcile) + US-008 (metrics) + US-009 (a2a integration)
+- Week 3: US-009 (a2a integration) — US-007/US-008 deferred (見 §3 + §5 carve-out)
 - Week 4: US-010 (docs) + canary + 驗收
+
+US-011/US-012 為 M3 milestone，timeline 由 [`.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md`](../.omc/plans/ralplan-m3-l2-dualread-2026-04-27.md) 管，不列入本 Phase 4 估計。
 
 ---
 
