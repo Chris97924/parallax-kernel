@@ -42,8 +42,10 @@ debug runs.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import json
+import logging
 import os
 import re
 from collections.abc import Iterable, Sequence
@@ -60,6 +62,7 @@ __all__ = [
     "CROSSWALK_MISS_THRESHOLD",
     "CIRCUIT_OPEN_72H_MAX",
     "DEFAULT_DATA_QUALITY_FILTER",
+    "LoadResult",
     "discrepancy_rate",
     "arbitration_conflict_rate",
     "write_error_rate",
@@ -68,6 +71,8 @@ __all__ = [
     "circuit_open_count",
     "load_records",
 ]
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Threshold constants (single source of truth — imported by metrics.py + CLI)
@@ -135,22 +140,48 @@ def _normalize_outcome(record: dict[str, Any]) -> str | None:
     return None
 
 
+@dataclasses.dataclass(frozen=True)
+class LoadResult:
+    """Result of :func:`load_records` — records plus directory / parse health.
+
+    Story H5 — surfaces ``dir_missing`` so the CLI can distinguish a
+    misconfigured ``--log-dir`` (missing path) from a legitimately empty
+    log dir during a quiet rollout window.
+
+    Story MED-MALFORMED-COUNTER — surfaces ``malformed`` so callers can
+    track JSONL parse failures without scanning the file twice. Lines
+    that fail to parse (invalid JSON, non-dict payload, missing /
+    unparseable ``timestamp``) increment this counter and a single
+    aggregate WARNING is logged at the end of :func:`load_records` when
+    any malformed lines were observed.
+    """
+
+    records: list[dict[str, Any]]
+    dir_missing: bool
+    malformed: int
+
+
 def load_records(
     *,
     log_dir: Path | str | None = None,
     since: _dt.timedelta | None = None,
     now: _dt.datetime | None = None,
-) -> list[dict[str, Any]]:
+) -> LoadResult:
     """Load and parse all dual-read decision records under ``log_dir``.
 
     Records older than ``now - since`` (when ``since`` is given) are dropped.
     Records with unparseable JSON or unparseable timestamps are dropped
-    silently — they cannot be window-filtered safely. Returns records sorted
-    by timestamp ascending.
+    silently from the record list — they cannot be window-filtered safely
+    — but counted in ``LoadResult.malformed``. Returns records sorted by
+    timestamp ascending.
+
+    H5 — when the resolved log directory does not exist, returns a
+    ``LoadResult(records=[], dir_missing=True, malformed=0)`` so the CLI
+    can surface the misconfiguration as a distinct failure mode.
     """
     resolved_dir = _resolve_log_dir(log_dir)
     if not resolved_dir.is_dir():
-        return []
+        return LoadResult(records=[], dir_missing=True, malformed=0)
 
     cutoff: _dt.datetime | None = None
     if since is not None:
@@ -160,12 +191,14 @@ def load_records(
             cutoff = cutoff.replace(tzinfo=_dt.UTC)
 
     records: list[tuple[_dt.datetime, dict[str, Any]]] = []
+    malformed = 0
     for path in sorted(resolved_dir.glob(_LOG_FILE_GLOB)):
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
         file_date = _file_date(path)
+        file_in_window = cutoff is None or (file_date is not None and file_date >= cutoff.date())
         # Conservative file-level prefilter: skip files whose UTC date is
         # entirely before the cutoff date.
         if cutoff is not None and file_date is not None and file_date < cutoff.date():
@@ -177,19 +210,40 @@ def load_records(
             try:
                 parsed = json.loads(stripped)
             except json.JSONDecodeError:
+                if file_in_window:
+                    malformed += 1
                 continue
             if not isinstance(parsed, dict):
+                if file_in_window:
+                    malformed += 1
                 continue
             ts_raw = parsed.get("timestamp")
             ts = _parse_timestamp(ts_raw) if isinstance(ts_raw, str) else None
             if ts is None:
+                if file_in_window:
+                    malformed += 1
                 continue
             if cutoff is not None and ts < cutoff:
                 continue
             records.append((ts, parsed))
 
     records.sort(key=lambda triple: triple[0])
-    return [r for _, r in records]
+    if malformed > 0:
+        # MED-MALFORMED-COUNTER — single aggregate WARNING per call so
+        # operators see the count without firehose log noise.
+        _log.warning(
+            "dual_read_metrics.malformed_lines_skipped",
+            extra={
+                "event": "dual_read_metrics.malformed_lines_skipped",
+                "log_dir": str(resolved_dir),
+                "count": malformed,
+            },
+        )
+    return LoadResult(
+        records=[r for _, r in records],
+        dir_missing=False,
+        malformed=malformed,
+    )
 
 
 def _filter_by_quality(
@@ -229,7 +283,7 @@ def _load_filtered(
     """Common path: parse window, load, filter by quality."""
     delta = parse_window(window)
     raw = load_records(log_dir=log_dir, since=delta, now=now)
-    return _filter_by_quality(raw, data_quality_filter)
+    return _filter_by_quality(raw.records, data_quality_filter)
 
 
 # ---------------------------------------------------------------------------

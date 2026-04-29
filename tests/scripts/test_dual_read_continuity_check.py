@@ -492,3 +492,88 @@ def test_main_in_process_write_error_breach(tmp_path: Path, capsys) -> None:
     assert rc == 1
     payload = json.loads(captured.out)
     assert "write_error_rate" in payload["failures"]
+
+
+# ---------------------------------------------------------------------------
+# H5 — distinguish missing dir from empty dir
+# ---------------------------------------------------------------------------
+
+
+def test_missing_log_dir_fails_by_default(tmp_path: Path) -> None:
+    """Story H5 — pointing CLI at a nonexistent path fails by default."""
+    missing = tmp_path / "does_not_exist"
+    result = _run(
+        "--since=72h",
+        f"--log-dir={missing}",
+        "--min-records=0",
+        "--format=json",
+        "--now=2026-04-26T12:00:00+00:00",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is False
+    assert payload["log_dir_missing"] is True
+    assert "log_dir_missing" in payload["failures"]
+
+
+def test_missing_log_dir_with_allow_flag_passes(tmp_path: Path) -> None:
+    """Story H5 — --allow-missing-dir downgrades the missing dir to OK."""
+    missing = tmp_path / "does_not_exist"
+    result = _run(
+        "--since=72h",
+        f"--log-dir={missing}",
+        "--min-records=0",
+        "--format=json",
+        "--allow-missing-dir",
+        "--now=2026-04-26T12:00:00+00:00",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["log_dir_missing"] is True
+    assert payload["passed"] is True
+    assert "log_dir_missing" not in payload["failures"]
+
+
+def test_empty_log_dir_distinguished_from_missing(tmp_path: Path) -> None:
+    """Story H5 — an existing-but-empty dir reports log_dir_missing=False."""
+    # tmp_path itself exists; just don't write any records.
+    result = _run(
+        "--since=72h",
+        f"--log-dir={tmp_path}",
+        "--min-records=0",
+        "--format=json",
+        "--now=2026-04-26T12:00:00+00:00",
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["log_dir_missing"] is False
+
+
+# ---------------------------------------------------------------------------
+# MED-MALFORMED-COUNTER — JSONL malformed line tracking
+# ---------------------------------------------------------------------------
+
+
+def test_cli_reports_malformed_count(tmp_path: Path) -> None:
+    """3 valid + 2 malformed lines → JSON has ``malformed: 2``."""
+    log_dir = tmp_path
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / "dual-read-decisions-2026-04-26.jsonl"
+    valid = _record(outcome="match", timestamp="2026-04-26T11:30:00.000000+00:00")
+    with path.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps(valid, sort_keys=True) + "\n")
+        fh.write(json.dumps(valid, sort_keys=True) + "\n")
+        fh.write("not-json-at-all\n")
+        fh.write(json.dumps(valid, sort_keys=True) + "\n")
+        fh.write("{still-broken}\n")
+    result = _run(
+        "--since=72h",
+        f"--log-dir={log_dir}",
+        "--min-records=0",
+        "--format=json",
+        "--now=2026-04-26T12:00:00+00:00",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["total_records"] == 3
+    assert payload["malformed"] == 2

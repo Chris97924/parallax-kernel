@@ -140,6 +140,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ISO-8601 UTC anchor for the window cutoff (testing/replay only).",
     )
+    parser.add_argument(
+        "--allow-missing-dir",
+        action="store_true",
+        default=False,
+        help=(
+            "Treat a missing log directory as PASS instead of FAIL. Default: "
+            "missing dir is a misconfiguration breach (exit 1). Set this for "
+            "smoke runs against fresh boxes where the dir has not been created yet."
+        ),
+    )
     return parser
 
 
@@ -158,7 +168,10 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
 
     # Load once for total_records; the rate functions reload internally.
     delta = parse_window(args.since)
-    total_records = len(load_records(log_dir=log_dir, since=delta, now=now))
+    load_result = load_records(log_dir=log_dir, since=delta, now=now)
+    total_records = len(load_result.records)
+    dir_missing = load_result.dir_missing
+    malformed = load_result.malformed
 
     rates = {
         "discrepancy_rate": discrepancy_rate(args.since, log_dir=log_dir, now=now),
@@ -174,6 +187,10 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     circuit_count = circuit_open_count(args.since, log_dir=log_dir, now=now)
 
     failures: list[str] = []
+    # H5 — distinguish "log dir missing" from "log dir empty". Operators
+    # explicitly opt in via --allow-missing-dir for fresh-box smoke runs.
+    if dir_missing and not args.allow_missing_dir:
+        failures.append("log_dir_missing")
     if total_records < args.min_records:
         failures.append("min_records")
     if rates["discrepancy_rate"] > args.threshold_discrepancy:
@@ -189,10 +206,17 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     if circuit_count > args.threshold_circuit_open:
         failures.append("circuit_open_count")
 
+    if malformed > 0:
+        # MED-MALFORMED-COUNTER — log a warning to stderr (CLI does NOT
+        # fail on malformed alone — operational nuisance, not a breach).
+        sys.stderr.write(f"warning: {malformed} malformed JSONL line(s) skipped during load\n")
+
     return {
         "since": args.since,
         "log_dir": str(log_dir) if log_dir else None,
+        "log_dir_missing": dir_missing,
         "total_records": total_records,
+        "malformed": malformed,
         "discrepancy_rate": rates["discrepancy_rate"],
         "arbitration_conflict_rate": rates["arbitration_conflict_rate"],
         "write_error_rate": rates["write_error_rate"],
@@ -217,11 +241,15 @@ def _format_human(report: dict[str, Any]) -> str:
     """Render the report as a one-screen oncall summary."""
     status = "PASS" if report["passed"] else "FAIL"
     th = report["thresholds"]
+    log_dir_display = report["log_dir"] or "(env / default)"
+    if report.get("log_dir_missing"):
+        log_dir_display = f"{log_dir_display} [MISSING]"
     lines = [
         f"[{status}] M3b US-006 — dual-read continuity check",
         f"  window:                       {report['since']}",
-        f"  log_dir:                      {report['log_dir'] or '(env / default)'}",
+        f"  log_dir:                      {log_dir_display}",
         f"  total_records:                {report['total_records']}",
+        f"  malformed:                    {report.get('malformed', 0)}",
         f"  discrepancy_rate:             {report['discrepancy_rate']:.6f}"
         f"  (threshold {th['discrepancy_rate']})",
         f"  arbitration_conflict_rate:    {report['arbitration_conflict_rate']:.6f}"

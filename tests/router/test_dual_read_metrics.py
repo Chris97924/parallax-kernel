@@ -310,3 +310,50 @@ def test_alternate_outcome_field_arbitration_outcome(tmp_path: Path) -> None:
     _write(tmp_path, [rec, {**rec, "arbitration_outcome": "match"}])
     rate = m.discrepancy_rate("1h", log_dir=tmp_path, now=now)
     assert rate == 0.5
+
+
+# ---------------------------------------------------------------------------
+# H5 — load_records returns _LoadResult with dir_missing + malformed counters
+# ---------------------------------------------------------------------------
+
+
+def test_load_records_returns_loadresult_with_dir_missing_when_path_missing(
+    tmp_path: Path,
+) -> None:
+    """Story H5 — missing dir flagged via dir_missing=True."""
+    from parallax.router import dual_read_metrics as m
+
+    missing = tmp_path / "does_not_exist"
+    result = m.load_records(log_dir=missing)
+    assert result.records == []
+    assert result.dir_missing is True
+    assert result.malformed == 0
+
+
+def test_load_records_returns_dir_missing_false_when_dir_exists(tmp_path: Path) -> None:
+    """Story H5 — existing dir reports dir_missing=False even when empty."""
+    from parallax.router import dual_read_metrics as m
+
+    result = m.load_records(log_dir=tmp_path)
+    assert result.records == []
+    assert result.dir_missing is False
+    assert result.malformed == 0
+
+
+def test_load_records_counts_malformed(tmp_path: Path) -> None:
+    """MED-MALFORMED-COUNTER — 3 valid + 2 corrupt → malformed=2, records=3."""
+    from parallax.router import dual_read_metrics as m
+
+    log_dir = tmp_path
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / "dual-read-decisions-2026-04-26.jsonl"
+    valid = _record(outcome="match", timestamp="2026-04-26T11:30:00.000000+00:00")
+    with path.open("w", encoding="utf-8") as fh:
+        for _ in range(3):
+            fh.write(json.dumps(valid, sort_keys=True) + "\n")
+        fh.write("not-json-at-all\n")
+        fh.write("{still-broken}\n")
+    result = m.load_records(log_dir=log_dir)
+    assert len(result.records) == 3
+    assert result.malformed == 2
+    assert result.dir_missing is False
