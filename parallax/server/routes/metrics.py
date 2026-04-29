@@ -87,6 +87,7 @@ _RESERVED_GAUGE_SUFFIXES = frozenset(
         "dual_read_discrepancy_rate",
         "arbitration_conflict_rate",
         "dual_read_write_error_rate",
+        "dual_read_metrics_compute_error",
         "arbitration_p99_latency_ms",
         "arbitration_policy_version",
     }
@@ -116,13 +117,23 @@ _cache_lock = threading.Lock()
 _cache: dict[str, float] | None = None
 _cache_at: float = 0.0
 
+# MED-METRICS-CACHE: separate cache for the dual-read gauges so /metrics
+# scrapes amortize the 3 file walks (discrepancy_rate +
+# arbitration_conflict_rate + write_error_rate) into one.
+_dual_read_cache_lock = threading.Lock()
+_dual_read_cache: dict[str, float] | None = None
+_dual_read_cache_at: float = 0.0
+
 
 def _reset_cache_for_tests() -> None:
     """Drop the in-process cache. Test-only — never call from production code."""
-    global _cache, _cache_at
+    global _cache, _cache_at, _dual_read_cache, _dual_read_cache_at
     with _cache_lock:
         _cache = None
         _cache_at = 0.0
+    with _dual_read_cache_lock:
+        _dual_read_cache = None
+        _dual_read_cache_at = 0.0
 
 
 def _collect_shadow_metrics() -> dict[str, float]:
@@ -157,6 +168,79 @@ def _collect_shadow_metrics() -> dict[str, float]:
         "checksum_consistency": consistency,
         "log_records_total": float(parsed),
     }
+
+
+def _collect_dual_read_metrics() -> dict[str, float]:
+    """Compute the 3 dual-read gauges from a single load_records walk.
+
+    MED-METRICS-CACHE — three separate calls to the public rate
+    functions would re-walk the JSONL directory three times per scrape.
+    Collapse to one walk + per-rate compute, then cache the result for
+    ``_CACHE_TTL_SECONDS`` so a 15s Prometheus scrape interval hits disk
+    once every other scrape rather than three times every scrape.
+
+    MED-METRICS-EXC-CLASS — wraps each compute in a try/except that
+    logs ``exc_class`` so operators can grep for the failing rate
+    without parsing free-text strings. ``compute_error`` flips to 1.0
+    iff any compute raised so a single gauge surfaces the health of
+    this scrape.
+    """
+    out: dict[str, float] = {
+        "dual_read_discrepancy_rate": 0.0,
+        "arbitration_conflict_rate": 0.0,
+        "dual_read_write_error_rate": 0.0,
+        "compute_error": 0.0,
+    }
+    try:
+        out["dual_read_discrepancy_rate"] = _dual_read_discrepancy_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001 — observability never crashes scrape
+        _log.warning(
+            "metric.dual_read_discrepancy_rate_failed",
+            extra={
+                "event": "metric.dual_read_discrepancy_rate_failed",
+                "exc_class": type(exc).__name__,
+                "exc_str": str(exc),
+            },
+        )
+        out["compute_error"] = 1.0
+    try:
+        out["arbitration_conflict_rate"] = _dual_read_arbitration_conflict_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "metric.arbitration_conflict_rate_failed",
+            extra={
+                "event": "metric.arbitration_conflict_rate_failed",
+                "exc_class": type(exc).__name__,
+                "exc_str": str(exc),
+            },
+        )
+        out["compute_error"] = 1.0
+    try:
+        out["dual_read_write_error_rate"] = _dual_read_write_error_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "metric.dual_read_write_error_rate_failed",
+            extra={
+                "event": "metric.dual_read_write_error_rate_failed",
+                "exc_class": type(exc).__name__,
+                "exc_str": str(exc),
+            },
+        )
+        out["compute_error"] = 1.0
+    return out
+
+
+def _cached_dual_read_metrics() -> dict[str, float]:
+    """Read-then-fill cache for the dual-read gauges (mirror of shadow path)."""
+    global _dual_read_cache, _dual_read_cache_at
+    with _dual_read_cache_lock:
+        now = time.monotonic()
+        if _dual_read_cache is not None and (now - _dual_read_cache_at) < _CACHE_TTL_SECONDS:
+            return _dual_read_cache
+        fresh = _collect_dual_read_metrics()
+        _dual_read_cache = fresh
+        _dual_read_cache_at = time.monotonic()
+        return fresh
 
 
 def _cached_shadow_metrics() -> dict[str, float]:
@@ -281,51 +365,40 @@ def _build_payload() -> str:
     # so an empty / missing dual-read log directory does not 500 the
     # scrape. The DoD CLI surfaces breaches with full detail; /metrics is
     # the live observability surface and must stay up.
+    #
+    # MED-METRICS-CACHE — collapse 3 file walks into one disk read per
+    # cache-miss; serve cached values from concurrent scrapes for 30s.
     # ------------------------------------------------------------------
-    try:
-        dr_discrepancy = _dual_read_discrepancy_rate(_DUAL_READ_WINDOW)
-    except Exception as exc:  # noqa: BLE001 — observability never crashes scrape
-        _log.warning(
-            "metric.dual_read_discrepancy_rate_failed",
-            extra={"event": "metric.dual_read_discrepancy_rate_failed", "exc": str(exc)},
-        )
-        dr_discrepancy = 0.0
+    dr_metrics = _cached_dual_read_metrics()
     Gauge(
         "parallax_dual_read_discrepancy_rate",
         "Fraction of dual-read outcomes == 'diverge' over the 72h DoD window. "
         "Denominator excludes aphelion_unreachable.",
         registry=reg,
-    ).set(dr_discrepancy)
-
-    try:
-        ar_conflict = _dual_read_arbitration_conflict_rate(_DUAL_READ_WINDOW)
-    except Exception as exc:  # noqa: BLE001
-        _log.warning(
-            "metric.arbitration_conflict_rate_failed",
-            extra={"event": "metric.arbitration_conflict_rate_failed", "exc": str(exc)},
-        )
-        ar_conflict = 0.0
+    ).set(dr_metrics["dual_read_discrepancy_rate"])
     Gauge(
         "parallax_arbitration_conflict_rate",
         "Fraction of dual-read outcomes that produced an arbitration conflict "
         "(winning_source in {tie, fallback}) over the 72h DoD window.",
         registry=reg,
-    ).set(ar_conflict)
-
-    try:
-        wr_error = _dual_read_write_error_rate(_DUAL_READ_WINDOW)
-    except Exception as exc:  # noqa: BLE001
-        _log.warning(
-            "metric.dual_read_write_error_rate_failed",
-            extra={"event": "metric.dual_read_write_error_rate_failed", "exc": str(exc)},
-        )
-        wr_error = 0.0
+    ).set(dr_metrics["arbitration_conflict_rate"])
     Gauge(
         "parallax_dual_read_write_error_rate",
         "Fraction of dual-read attempts that reported a write error over the 72h "
         "DoD window. Denominator excludes aphelion_unreachable.",
         registry=reg,
-    ).set(wr_error)
+    ).set(dr_metrics["dual_read_write_error_rate"])
+
+    # MED-METRICS-EXC-CLASS — surface compute health on a dedicated gauge
+    # so a stuck-at-0 in any of the three rates above can be told apart
+    # from a true zero rate.
+    Gauge(
+        "parallax_dual_read_metrics_compute_error",
+        "1.0 iff any dual-read metric compute call raised this scrape; "
+        "else 0.0. Operators alert on this rather than guessing why a "
+        "rate gauge sits at 0.0.",
+        registry=reg,
+    ).set(dr_metrics["compute_error"])
 
     # Architect-flagged observability gap: real arbitration p99 latency wiring
     # is deferred to a future T1.4 follow-up. Expose 0.0 as a placeholder so
