@@ -18,6 +18,8 @@ Hard invariants — never violated:
 
 from __future__ import annotations
 
+import dataclasses
+import sqlite3
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, wait
@@ -101,12 +103,19 @@ class DualReadRouter:
         live_counter: LiveDiscrepancyCounter | None = None,
         executor: ThreadPoolExecutor | None = None,
         secondary_timeout_ms: float = 100.0,
+        events_conn: sqlite3.Connection | None = None,
     ) -> None:
         self._primary = primary
         self._secondary = secondary
         self._live_counter = live_counter
         self._executor = executor or ThreadPoolExecutor(max_workers=2)
         self._secondary_timeout_ms = secondary_timeout_ms
+        # M3b Phase 2 (US-005): optional events DB connection used to
+        # emit ``arbitration_conflict`` rows when an arbitration decision
+        # requires manual review.  None disables conflict-event logging
+        # (e.g. unit tests for the dual-read mechanics that don't care
+        # about the events table).
+        self._events_conn = events_conn
 
     # ------------------------------------------------------------------
     # Public API
@@ -276,6 +285,34 @@ class DualReadRouter:
             query_type=request.query_type,
             correlation_id=cid,
         )
+
+        # M3b Phase 2 (US-005-M3-T2.2): when the arbitration verdict
+        # requires manual review (winning_source in {"tie","fallback"}),
+        # emit an ``arbitration_conflict`` envelope row to the events
+        # table.  Best-effort: ``write_conflict_event`` is fail-closed
+        # and returns "" on any exception — observability never crashes
+        # the canonical query path.  The wiring is gated on an explicit
+        # ``events_conn`` having been passed at construction time so
+        # call sites that opt out (or unit tests) skip the write
+        # entirely with no overhead.
+        if arbitration.requires_manual_review and self._events_conn is not None:
+            try:
+                from parallax.events.conflict_writer import write_conflict_event
+
+                payload_for_writer = {
+                    "primary": primary_result,
+                    "secondary": secondary_result,
+                    "user_id": request.user_id,
+                }
+                event_id = write_conflict_event(arbitration, payload_for_writer, self._events_conn)
+                if event_id:
+                    arbitration = dataclasses.replace(arbitration, conflict_event_id=event_id)
+            except Exception as exc:  # noqa: BLE001 — fail-closed
+                _safe_log_warning(
+                    "conflict_event_write_failed",
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
+                )
 
         result = DualReadResult(
             outcome=outcome,

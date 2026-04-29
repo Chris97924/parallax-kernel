@@ -45,6 +45,7 @@ from parallax.migrations import (
     m0010_memory_cards,
     m0011_crosswalk,
     m0012_crosswalk_aphelion_doc_id,
+    m0013_events_event_type_correlation_id_index,
 )
 from parallax.sqlite_store import now_iso
 
@@ -143,20 +144,24 @@ MIGRATIONS: list[Migration] = [
         up=m0012_crosswalk_aphelion_doc_id.up,
         down=m0012_crosswalk_aphelion_doc_id.down,
     ),
+    Migration(
+        version=13,
+        name="events_event_type_correlation_id_index",
+        up=m0013_events_event_type_correlation_id_index.up,
+        down=m0013_events_event_type_correlation_id_index.down,
+    ),
 ]
 
 
 def ensure_schema_migrations_table(conn: sqlite3.Connection) -> None:
     """Create the ``schema_migrations`` ledger if missing."""
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version    INTEGER PRIMARY KEY,
             name       TEXT NOT NULL,
             applied_at TIMESTAMP NOT NULL
         )
-        """
-    )
+        """)
     conn.commit()
 
 
@@ -250,6 +255,7 @@ _MIGRATION_MODULES: dict[int, object] = {
     10: m0010_memory_cards,
     11: m0011_crosswalk,
     12: m0012_crosswalk_aphelion_doc_id,
+    13: m0013_events_event_type_correlation_id_index,
 }
 
 # Matches table identifiers following the DDL/DML keywords we care about.

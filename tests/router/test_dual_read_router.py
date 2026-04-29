@@ -664,3 +664,53 @@ def test_arbitration_none_when_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert r.outcome == "skipped"
     assert r.arbitration is None
+
+
+# ---------------------------------------------------------------------------
+# M3b Phase 2 (US-005-M3-T2.2) — Conflict event emission
+# ---------------------------------------------------------------------------
+
+
+def test_conflict_event_written_when_requires_manual_review(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """When ``arbitration.requires_manual_review`` is True (fallback path
+    from a crosswalk-miss), the router emits one ``arbitration_conflict``
+    row and stamps the resulting event_id onto the arbitration verdict
+    via ``dataclasses.replace`` (the original LiveArbitrationDecision
+    instance is frozen — never mutated)."""
+    from parallax.migrations import migrate_to_latest
+    from parallax.sqlite_store import connect
+
+    monkeypatch.setenv("DUAL_READ", "true")
+    db = tmp_path / "conflict_events.db"
+    events_conn = connect(db)
+    try:
+        migrate_to_latest(events_conn)
+
+        # Force fallback path: secondary returns AphelionUnreachableError.
+        primary = _StubPort(_n_hits())
+        secondary = _RaisingPort(AphelionUnreachableError("not_implemented"))
+        router = DualReadRouter(
+            primary=primary,
+            secondary=secondary,
+            secondary_timeout_ms=500.0,
+            events_conn=events_conn,
+        )
+        r = router.query(_request(QueryType.RECENT_CONTEXT))
+
+        assert r.outcome == "aphelion_unreachable"
+        assert r.arbitration is not None
+        assert r.arbitration.winning_source == "fallback"
+        assert r.arbitration.requires_manual_review is True
+        assert r.arbitration.conflict_event_id is not None
+        assert r.arbitration.conflict_event_id != ""
+
+        rows = events_conn.execute(
+            "SELECT event_id, payload_json FROM events " "WHERE event_type = 'arbitration_conflict'"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["event_id"] == r.arbitration.conflict_event_id
+    finally:
+        events_conn.close()

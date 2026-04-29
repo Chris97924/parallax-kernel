@@ -30,7 +30,7 @@ class TestMigrationRegistry:
     def test_migrations_in_order(self) -> None:
         versions = [m.version for m in MIGRATIONS]
         names = [m.name for m in MIGRATIONS]
-        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert versions == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         assert names == [
             "initial_schema",
             "events_append_only",
@@ -44,6 +44,7 @@ class TestMigrationRegistry:
             "memory_cards",
             "crosswalk",
             "crosswalk_aphelion_doc_id",
+            "events_event_type_correlation_id_index",
         ]
 
     def test_migration_is_frozen_dataclass(self) -> None:
@@ -58,9 +59,21 @@ class TestMigrationRegistry:
 class TestMigrateToLatest:
     def test_fresh_db_applies_all(self, empty_conn: sqlite3.Connection) -> None:
         applied = migrate_to_latest(empty_conn)
-        assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         assert applied_versions(empty_conn) == {
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
         }
         assert pending(empty_conn) == []
 
@@ -71,9 +84,7 @@ class TestMigrateToLatest:
 
     def test_creates_expected_tables(self, empty_conn: sqlite3.Connection) -> None:
         migrate_to_latest(empty_conn)
-        rows = empty_conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        rows = empty_conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         names = {r[0] for r in rows}
         assert {
             "sources",
@@ -91,7 +102,7 @@ class TestMigrateToLatest:
         rows = empty_conn.execute(
             "SELECT version, name, applied_at FROM schema_migrations ORDER BY version"
         ).fetchall()
-        assert [r[0] for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert [r[0] for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         for _, _, applied_at in rows:
             assert applied_at  # non-empty ISO timestamp
 
@@ -100,9 +111,7 @@ class TestMigrateDownTo:
     def test_down_to_zero_drops_user_tables(self, empty_conn: sqlite3.Connection) -> None:
         migrate_to_latest(empty_conn)
         migrate_down_to(empty_conn, 0)
-        rows = empty_conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
+        rows = empty_conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         names = {r[0] for r in rows}
         # schema_migrations remains as the meta-ledger
         assert names == {"schema_migrations"}
@@ -112,11 +121,9 @@ class TestMigrateDownTo:
         migrate_to_latest(empty_conn)
         migrate_down_to(empty_conn, 0)
         applied = migrate_to_latest(empty_conn)
-        assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
-    def test_down_to_one_keeps_initial_schema(
-        self, empty_conn: sqlite3.Connection
-    ) -> None:
+    def test_down_to_one_keeps_initial_schema(self, empty_conn: sqlite3.Connection) -> None:
         migrate_to_latest(empty_conn)
         migrate_down_to(empty_conn, 1)
         names = {
@@ -194,8 +201,12 @@ class TestClaimMetadataTable:
             empty_conn.execute(
                 """INSERT INTO claim_metadata(claim_id, last_seen_at, created_at, updated_at)
                    VALUES (?, ?, ?, ?)""",
-                ("does-not-exist", "2026-04-18T00:00:00Z",
-                 "2026-04-18T00:00:00Z", "2026-04-18T00:00:00Z"),
+                (
+                    "does-not-exist",
+                    "2026-04-18T00:00:00Z",
+                    "2026-04-18T00:00:00Z",
+                    "2026-04-18T00:00:00Z",
+                ),
             )
             empty_conn.commit()
 
@@ -211,9 +222,7 @@ class TestClaimMetadataTable:
 class TestAtomicityFix01:
     """FIX-01 — up() failure rolls back BOTH the ledger insert AND the DDL."""
 
-    def test_up_failure_rolls_back_ledger_and_ddl(
-        self, empty_conn: sqlite3.Connection
-    ) -> None:
+    def test_up_failure_rolls_back_ledger_and_ddl(self, empty_conn: sqlite3.Connection) -> None:
         # Apply 0001 first so the events table exists; we will register a
         # bogus migration whose up() partially executes a CREATE TABLE then
         # raises. The framework must roll BOTH the ledger row AND the
@@ -225,9 +234,7 @@ class TestAtomicityFix01:
             c.execute("CREATE TABLE atomicity_probe (id TEXT PRIMARY KEY)")
             raise RuntimeError("intentional mid-up failure")
 
-        bogus = Migration(
-            version=999, name="bogus", up=bad_up, down=lambda _c: None
-        )
+        bogus = Migration(version=999, name="bogus", up=bad_up, down=lambda _c: None)
         MIGRATIONS.append(bogus)
         try:
             with pytest.raises(RuntimeError, match="intentional mid-up failure"):
@@ -305,8 +312,18 @@ class TestClaimMetadataV5Fix02:
             """INSERT INTO claims(claim_id, user_id, subject, predicate, object,
                    source_id, content_hash, state, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (claim_id, "u", "s", "p", "o", "src1", f"h-{claim_id}", "auto",
-             "2026-04-18T00:00:00Z", "2026-04-18T00:00:00Z"),
+            (
+                claim_id,
+                "u",
+                "s",
+                "p",
+                "o",
+                "src1",
+                f"h-{claim_id}",
+                "auto",
+                "2026-04-18T00:00:00Z",
+                "2026-04-18T00:00:00Z",
+            ),
         )
 
     def _insert_metadata(
@@ -320,21 +337,22 @@ class TestClaimMetadataV5Fix02:
             """INSERT INTO claim_metadata(claim_id, last_seen_at, superseded_by,
                    created_at, updated_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (claim_id, "2026-04-18T00:00:00Z", superseded_by,
-             "2026-04-18T00:00:00Z", "2026-04-18T00:00:00Z"),
+            (
+                claim_id,
+                "2026-04-18T00:00:00Z",
+                superseded_by,
+                "2026-04-18T00:00:00Z",
+                "2026-04-18T00:00:00Z",
+            ),
         )
 
-    def test_self_supersession_check_blocks_insert(
-        self, empty_conn: sqlite3.Connection
-    ) -> None:
+    def test_self_supersession_check_blocks_insert(self, empty_conn: sqlite3.Connection) -> None:
         migrate_to_latest(empty_conn)
         self._seed_claim(empty_conn, "c1")
         with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint"):
             self._insert_metadata(empty_conn, claim_id="c1", superseded_by="c1")
 
-    def test_on_delete_set_null_clears_superseded_by(
-        self, empty_conn: sqlite3.Connection
-    ) -> None:
+    def test_on_delete_set_null_clears_superseded_by(self, empty_conn: sqlite3.Connection) -> None:
         migrate_to_latest(empty_conn)
         self._seed_claim(empty_conn, "c1")
         self._seed_claim(empty_conn, "c2")
@@ -356,9 +374,7 @@ class TestClaimMetadataV5Fix02:
         ).fetchone()
         assert row[0] is None
 
-    def test_data_preserved_across_v5_swap(
-        self, empty_conn: sqlite3.Connection
-    ) -> None:
+    def test_data_preserved_across_v5_swap(self, empty_conn: sqlite3.Connection) -> None:
         # Apply through 4, seed a row, then apply 5 manually and verify the
         # row survives the table swap.
         migrate_to_latest(empty_conn)
@@ -371,9 +387,7 @@ class TestClaimMetadataV5Fix02:
         # Apply 0005 directly via the framework (re-up).
         migrate_to_latest(empty_conn)
 
-        rows = empty_conn.execute(
-            "SELECT claim_id, reaffirm_count FROM claim_metadata"
-        ).fetchall()
+        rows = empty_conn.execute("SELECT claim_id, reaffirm_count FROM claim_metadata").fetchall()
         assert (rows[0][0], rows[0][1]) == ("cA", 0)
 
     def test_down_then_up_round_trip(self, empty_conn: sqlite3.Connection) -> None:

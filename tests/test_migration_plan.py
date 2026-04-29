@@ -40,9 +40,7 @@ class TestMigrationPlanShape:
             assert isinstance(step.row_impact_estimates, dict)
         c.close()
 
-    def test_fully_migrated_db_reports_empty_pending(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_fully_migrated_db_reports_empty_pending(self, tmp_path: pathlib.Path) -> None:
         c = _fresh_conn(tmp_path, "full.db")
         migrate_to_latest(c)
         plan = migration_plan(c)
@@ -60,17 +58,17 @@ class TestMigrationPlanShape:
         # v1..3 by running their up() manually in a txn.
         from parallax.migrations import _manual_tx
         from parallax.sqlite_store import now_iso
+
         for mig in MIGRATIONS[:3]:
             with _manual_tx(c):
                 mig.up(c)
                 c.execute(
-                    "INSERT INTO schema_migrations(version, name, applied_at) "
-                    "VALUES (?, ?, ?)",
+                    "INSERT INTO schema_migrations(version, name, applied_at) " "VALUES (?, ?, ?)",
                     (mig.version, mig.name, now_iso()),
                 )
         plan = migration_plan(c)
         assert plan.applied == (1, 2, 3)
-        assert [s.version for s in plan.pending] == [4, 5, 6, 7, 8, 9, 10, 11, 12]
+        assert [s.version for s in plan.pending] == [4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
         assert plan.current_version == 3
         c.close()
 
@@ -89,10 +87,11 @@ class TestRowImpactEstimates:
         # A fresh plan on a fully-migrated DB has zero pending — roll back
         # v7 so we have one pending migration to inspect.
         from parallax.migrations import migrate_down_to
+
         migrate_down_to(c, 7)
         plan = migration_plan(c)
-        # After rolling back to v7, migrations 8, 9, 10, 11, 12 are all pending.
-        assert len(plan.pending) == 5
+        # After rolling back to v7, migrations 8, 9, 10, 11, 12, 13 are pending.
+        assert len(plan.pending) == 6
         for step in plan.pending:
             for table, count in step.row_impact_estimates.items():
                 assert isinstance(count, int)
@@ -102,20 +101,17 @@ class TestRowImpactEstimates:
 
 
 class TestNonDestructive:
-    def test_migration_plan_has_no_side_effects(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_migration_plan_has_no_side_effects(self, tmp_path: pathlib.Path) -> None:
         c = _fresh_conn(tmp_path, "side.db")
         migrate_to_latest(c)
         from parallax.migrations import migrate_down_to
+
         migrate_down_to(c, 4)
 
         def _snapshot() -> tuple:
             return (
                 tuple(sorted(applied_versions(c))),
-                c.execute(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
-                ).fetchone()[0],
+                c.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0],
             )
 
         before = _snapshot()
@@ -130,6 +126,7 @@ class TestNonDestructive:
 class TestCliDryRun:
     def _env_with_db(self, db: pathlib.Path, vault: pathlib.Path) -> dict:
         import os
+
         env = os.environ.copy()
         env["PARALLAX_DB_PATH"] = str(db)
         env["PARALLAX_VAULT_PATH"] = str(vault)
@@ -150,9 +147,7 @@ class TestCliDryRun:
         assert proc.returncode == 0, proc.stderr
         assert "pending" in proc.stdout
 
-    def test_cli_migrate_json_emits_parseable_plan(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_cli_migrate_json_emits_parseable_plan(self, tmp_path: pathlib.Path) -> None:
         db = tmp_path / "cli-json.db"
         vault = tmp_path / "vault"
         vault.mkdir()
