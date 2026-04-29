@@ -325,14 +325,20 @@ def write_conflict_event(
     try:
         ts_us = now_us_utc if now_us_utc is not None else time.time_ns() // 1_000
         canonical_ref = _derive_canonical_ref(payload)
-        conflict_field = decision.tie_breaker_rule
+        # MED-CONFLICT-FIELD-SCHEMA — store the rule under a namespaced
+        # ``rule:<name>`` prefix so a future tie_breaker_rule add (e.g.
+        # ``"recency"``) writes a *visibly* distinct dedup_key and
+        # cannot collide with old "source-level" rows. The previous
+        # bare-string layout silently merged "source-level" with any
+        # future rule that happened to contain the same characters.
+        dedup_key = f"rule:{decision.tie_breaker_rule}"
 
         # -- Dedup window check -----------------------------------------
         window_start_us = ts_us - DEDUP_WINDOW_SECONDS * 1_000_000
         existing = _select_existing_event_id(
             conn,
             canonical_ref=canonical_ref,
-            conflict_field=conflict_field,
+            conflict_field=dedup_key,
             window_start_us=window_start_us,
         )
         if existing is not None:
@@ -359,7 +365,7 @@ def write_conflict_event(
             user_id=user_id,
             actor="system",
             canonical_ref=canonical_ref,
-            conflict_field=conflict_field,
+            conflict_field=dedup_key,
             payload_json=payload_json,
             created_at=_now_iso_from_us(ts_us),
         )
