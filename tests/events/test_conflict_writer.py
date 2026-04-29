@@ -423,7 +423,7 @@ def test_migration_idempotent_repeated_runs(tmp_path: pathlib.Path) -> None:
         )
         assert before == after
         # The new conflict-event index exists exactly once.
-        assert sum(1 for n in after if "events_event_type_correlation_id" in n) == 1
+        assert sum(1 for n in after if "events_event_type_target_id" in n) == 1
     finally:
         c.close()
 
@@ -438,7 +438,7 @@ def test_migration_creates_event_type_correlation_id_index(
         idx = c.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='index' AND tbl_name='events' "
-            "AND name = 'idx_events_event_type_correlation_id'"
+            "AND name = 'idx_events_event_type_target_id'"
         ).fetchone()
         assert idx is not None
     finally:

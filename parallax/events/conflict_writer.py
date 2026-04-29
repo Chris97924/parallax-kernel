@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from collections.abc import Mapping
@@ -76,11 +77,16 @@ class WriteFailure(Exception):
 
 _dedup_hits: dict[str, int] = {"count": 0}
 _write_failures: dict[str, int] = {"count": 0}
+# MED-LOWS-BUNDLED — guard the in-process counters with a single lock so
+# concurrent worker threads (CPython's GIL is not a substitute — a
+# read-modify-write spans multiple bytecodes) cannot lose increments.
+_counter_lock = threading.Lock()
 
 
 def get_dedup_hit_count() -> int:
     """Return the number of dedup hits observed so far in this process."""
-    return _dedup_hits["count"]
+    with _counter_lock:
+        return _dedup_hits["count"]
 
 
 def get_write_failure_count() -> int:
@@ -91,12 +97,14 @@ def get_write_failure_count() -> int:
     BEFORE returning the empty string.  Telemetry surfaces (Story
     JSONL-PRODUCER) read this to compute write_error_rate.
     """
-    return _write_failures["count"]
+    with _counter_lock:
+        return _write_failures["count"]
 
 
 def reset_write_failure_count() -> None:
     """Reset the write-failure counter to zero. Test-only."""
-    _write_failures["count"] = 0
+    with _counter_lock:
+        _write_failures["count"] = 0
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +356,8 @@ def write_conflict_event(
             window_start_us=window_start_us,
         )
         if existing is not None:
-            _dedup_hits["count"] += 1
+            with _counter_lock:
+                _dedup_hits["count"] += 1
             return existing
 
         # -- Build envelope ---------------------------------------------
@@ -383,7 +392,8 @@ def write_conflict_event(
         # H4 — increment write-failure counter BEFORE returning '' so
         # telemetry hooks reading get_write_failure_count() see every
         # failure regardless of which downstream step blew up.
-        _write_failures["count"] += 1
+        with _counter_lock:
+            _write_failures["count"] += 1
         try:
             _log.warning(
                 "conflict_writer_failed",

@@ -69,6 +69,7 @@ __all__ = [
     "aphelion_unreachable_rate",
     "crosswalk_miss_rate",
     "circuit_open_count",
+    "compute_all_rates",
     "load_records",
 ]
 
@@ -88,7 +89,11 @@ CIRCUIT_OPEN_72H_MAX = 3  # absolute count over the 72h window
 # Records flagged with these data_quality_flag values count toward production
 # rates by default. ``cold_start`` is excluded so early-rollout noise does not
 # pollute the DoD numerics.
+#
+# MED-LOWS-BUNDLED — promoted to module-level frozenset so
+# ``_filter_by_quality`` doesn't rebuild the set per call.
 DEFAULT_DATA_QUALITY_FILTER: tuple[str, ...] = ("normal", "corpus_immature")
+_DEFAULT_DATA_QUALITY_SET: frozenset[str] = frozenset(DEFAULT_DATA_QUALITY_FILTER)
 
 # ---------------------------------------------------------------------------
 # Log directory + file pattern
@@ -254,10 +259,8 @@ def _filter_by_quality(
 
     Records missing the flag are treated as ``"normal"`` (default).
     """
-    allowed = (
-        set(DEFAULT_DATA_QUALITY_FILTER)
-        if data_quality_filter is None
-        else set(data_quality_filter)
+    allowed: frozenset[str] | set[str] = (
+        _DEFAULT_DATA_QUALITY_SET if data_quality_filter is None else set(data_quality_filter)
     )
     out: list[dict[str, Any]] = []
     for r in records:
@@ -428,3 +431,57 @@ def circuit_open_count(
         window=window, log_dir=log_dir, now=now, data_quality_filter=data_quality_filter
     )
     return sum(1 for r in records if r.get("circuit_breaker_tripped") is True)
+
+
+def compute_all_rates(
+    records: list[dict[str, Any]],
+    *,
+    data_quality_filter: Sequence[str] | None = None,
+) -> dict[str, float | int]:
+    """Compute all 6 metrics from a single pre-loaded record list.
+
+    Story MED-LOWS-BUNDLED — eliminates the N+1 file walks the CLI used
+    to perform (one ``load_records`` per rate function = 6 walks per
+    invocation).  Caller pre-loads the records once, hands them in, and
+    receives a single dict of all metrics in one pass.
+    """
+    filtered = _filter_by_quality(records, data_quality_filter)
+    denom = _excluding_unreachable(filtered)
+    denom_n = len(denom)
+    all_n = len(filtered)
+
+    if denom_n == 0:
+        d_rate = 0.0
+        c_rate = 0.0
+        w_rate = 0.0
+        x_rate = 0.0
+    else:
+        d_rate = sum(1 for r in denom if _normalize_outcome(r) == "diverge") / denom_n
+        conflicts = 0
+        for r in denom:
+            ws = r.get("winning_source")
+            if isinstance(ws, str) and ws in ("tie", "fallback"):
+                conflicts += 1
+                continue
+            eid = r.get("conflict_event_id")
+            if isinstance(eid, str) and eid:
+                conflicts += 1
+        c_rate = conflicts / denom_n
+        w_rate = sum(1 for r in denom if r.get("write_error") is True) / denom_n
+        x_rate = sum(1 for r in denom if r.get("crosswalk_status") == "miss") / denom_n
+
+    if all_n == 0:
+        u_rate = 0.0
+    else:
+        u_rate = sum(1 for r in filtered if _normalize_outcome(r) == "aphelion_unreachable") / all_n
+
+    circuit = sum(1 for r in filtered if r.get("circuit_breaker_tripped") is True)
+
+    return {
+        "discrepancy_rate": d_rate,
+        "arbitration_conflict_rate": c_rate,
+        "write_error_rate": w_rate,
+        "aphelion_unreachable_rate": u_rate,
+        "crosswalk_miss_rate": x_rate,
+        "circuit_open_count": circuit,
+    }

@@ -23,7 +23,7 @@ target_id)`` so the dedup SELECT stays O(log n).
 Reversibility: ``down`` drops the index — no row data changes, so the
 rollback is a single ``DROP INDEX IF EXISTS``.
 
-down = DROP INDEX idx_events_event_type_correlation_id
+down = DROP INDEX idx_events_event_type_target_id
 """
 
 from __future__ import annotations
@@ -31,12 +31,12 @@ from __future__ import annotations
 import sqlite3
 
 STATEMENTS: list[str] = [
-    "CREATE INDEX IF NOT EXISTS idx_events_event_type_correlation_id "
+    "CREATE INDEX IF NOT EXISTS idx_events_event_type_target_id "
     "ON events(event_type, target_id)",
 ]
 
 DOWN_STATEMENTS: list[str] = [
-    "DROP INDEX IF EXISTS idx_events_event_type_correlation_id",
+    "DROP INDEX IF EXISTS idx_events_event_type_target_id",
 ]
 
 

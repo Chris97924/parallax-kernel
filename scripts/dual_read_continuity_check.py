@@ -43,13 +43,8 @@ from parallax.router.dual_read_metrics import (  # noqa: E402
     CROSSWALK_MISS_THRESHOLD,
     DISCREPANCY_RATE_THRESHOLD_M3,
     WRITE_ERROR_RATE_THRESHOLD,
-    aphelion_unreachable_rate,
-    arbitration_conflict_rate,
-    circuit_open_count,
-    crosswalk_miss_rate,
-    discrepancy_rate,
+    compute_all_rates,
     load_records,
-    write_error_rate,
 )
 from parallax.shadow.discrepancy import parse_window  # noqa: E402
 
@@ -156,7 +151,17 @@ def _build_parser() -> argparse.ArgumentParser:
 def _parse_now(raw: str | None) -> _dt.datetime | None:
     if raw is None:
         return None
-    parsed = _dt.datetime.fromisoformat(raw)
+    try:
+        parsed = _dt.datetime.fromisoformat(raw)
+    except ValueError as exc:
+        # MED-LOWS-BUNDLED — the stdlib only stopped tripping on the ``Z``
+        # suffix in 3.11; older runtimes still raise.  Surface a friendly
+        # hint pointing operators at the right format.
+        raise ValueError(
+            f"--now value {raw!r} is not a valid ISO-8601 timestamp; "
+            f"use e.g. '2026-04-30T12:00:00+00:00' (Z-suffix not accepted "
+            f"on Python < 3.11): {exc}"
+        ) from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_dt.UTC)
     return parsed
@@ -166,25 +171,25 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     now = _parse_now(args.now)
     log_dir = Path(args.log_dir) if args.log_dir else None
 
-    # Load once for total_records; the rate functions reload internally.
+    # MED-LOWS-BUNDLED — single load_records call shared across all 6
+    # rate computations. Pre-fix the CLI walked the file tree 7×; now
+    # one walk feeds compute_all_rates which returns every metric in
+    # one pass.
     delta = parse_window(args.since)
     load_result = load_records(log_dir=log_dir, since=delta, now=now)
     total_records = len(load_result.records)
     dir_missing = load_result.dir_missing
     malformed = load_result.malformed
 
+    metrics = compute_all_rates(load_result.records)
     rates = {
-        "discrepancy_rate": discrepancy_rate(args.since, log_dir=log_dir, now=now),
-        "arbitration_conflict_rate": arbitration_conflict_rate(
-            args.since, log_dir=log_dir, now=now
-        ),
-        "write_error_rate": write_error_rate(args.since, log_dir=log_dir, now=now),
-        "aphelion_unreachable_rate": aphelion_unreachable_rate(
-            args.since, log_dir=log_dir, now=now
-        ),
-        "crosswalk_miss_rate": crosswalk_miss_rate(args.since, log_dir=log_dir, now=now),
+        "discrepancy_rate": metrics["discrepancy_rate"],
+        "arbitration_conflict_rate": metrics["arbitration_conflict_rate"],
+        "write_error_rate": metrics["write_error_rate"],
+        "aphelion_unreachable_rate": metrics["aphelion_unreachable_rate"],
+        "crosswalk_miss_rate": metrics["crosswalk_miss_rate"],
     }
-    circuit_count = circuit_open_count(args.since, log_dir=log_dir, now=now)
+    circuit_count = int(metrics["circuit_open_count"])
 
     failures: list[str] = []
     # H5 — distinguish "log dir missing" from "log dir empty". Operators

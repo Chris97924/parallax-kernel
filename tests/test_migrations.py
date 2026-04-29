@@ -421,7 +421,7 @@ class TestM0013Persistence:
         migrate_to_latest(c1)
         idx_before = c1.execute(
             "SELECT name FROM sqlite_master WHERE type='index' "
-            "AND tbl_name='events' AND name='idx_events_event_type_correlation_id'"
+            "AND tbl_name='events' AND name='idx_events_event_type_target_id'"
         ).fetchone()
         assert idx_before is not None
         c1.close()
@@ -432,7 +432,7 @@ class TestM0013Persistence:
         try:
             idx_after = c2.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' "
-                "AND tbl_name='events' AND name='idx_events_event_type_correlation_id'"
+                "AND tbl_name='events' AND name='idx_events_event_type_target_id'"
             ).fetchone()
             assert idx_after is not None, (
                 "m0013 index lost across connection boundary — runner did "
