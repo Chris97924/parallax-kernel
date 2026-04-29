@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **`POST /event` route.** Receives Orbit's M6 dual-write envelope and persists
+  it to the existing `events` table as a system-level audit row
+  (`target_kind=None`) via `parallax.events.record_event`. Authenticated via
+  the existing bearer token (`require_auth`). No new table, no new migration —
+  reuses `events` schema added in `m0001_initial_schema.py:80-90`. Closes
+  Orbit M6 rollout step 0 path-(a) defer blocker. New schemas:
+  `EventIngestRequest` / `EventIngestResponse` in
+  `parallax/server/schemas.py`. Test surface: 7 integration cases in
+  `tests/server/test_event_route.py` (auth/missing-field/empty-string/payload
+  round-trip/extra-field-forbid) + 22 parametrised unit cases in
+  `tests/test_event_ingest_schema.py`.
 - **`parallax serve` CLI subcommand.** Closes the gap where the Dockerfile,
   Railway config, and other deploy scripts referenced `parallax serve --host
   ... --port ...` but no such subcommand existed. The new subcommand pins
