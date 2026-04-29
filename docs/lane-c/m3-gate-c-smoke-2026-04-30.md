@@ -79,18 +79,42 @@ Coverage on parallax/router/live_arbitration.py: 100% (Story 4)
 ruff/black:                  clean (Story 4)
 ```
 
-### Delta after Story 5/6 — TO APPEND
+### Delta after Story 5/6 — final smoke @ branch tip `38077a4`
+
+Captured 2026-04-30 post-Story-6 commit. All gates pass.
 
 ```text
-[PLACEHOLDER — fill after Story 6 commit]
-- DUAL_READ=false delta:   55 → ___ passed (+__ from Story 5/6)
-- DUAL_READ=true  delta:   55 → ___ passed (+__ from Story 5/6)
-- Middleware suite delta:  9 → ___ passed
-- Full router suite delta: 445 → ___ passed
-- New conflict-event emission integration test pass: ___
-- New metrics scrape integration test pass: ___
-- Final branch tip: ___
+DUAL_READ=false delta:    55 → 56 passed (+1 from Story 5 conflict-event emission integration test)
+DUAL_READ=true  delta:    55 → 56 passed (same, env override)
+Middleware suite:         9 passed (unchanged — Story 5/6 added no middleware tests)
+Full router suite:        445 → 458 passed, 4 xfailed (+13 from Story 5/6: 1 dual_read integration + 12 dual_read_metrics)
+Full m3b suite:           671 passed, 4 xfailed
+  pytest tests/router/ tests/events/ tests/server/ tests/scripts/ --no-cov
+
+Story 5 conflict-event emission integration test (test_conflict_event_written_when_requires_manual_review): PASS
+Story 6 metrics scrape integration tests (test_metrics_dual_read_endpoint.py × 3): PASS
+Story 6 CLI tests (test_dual_read_continuity_check.py × 19): PASS
+Story 6 CLI smoke (--since=72h --min-records=0 --format=json): exit 0, all 6 thresholds pass on empty log
+
+Branch tip: 38077a4 feat(m3b): dual_read_continuity_check CLI + 6-metric DoD threshold check
+ruff check: clean across all touched files
+black --check: clean
+Coverage:
+  parallax/router/live_arbitration.py: 100% (Story 4)
+  parallax/events/conflict_writer.py: 93% (Story 5)
+  parallax/router/dual_read_metrics.py: 85% (Story 6)
+  scripts/dual_read_continuity_check.py: 89% (Story 6)
 ```
+
+## Gate C verdict
+
+✅ **PASSED** at branch tip `38077a4`. DUAL_READ flag wiring verified for both states; per-request middleware snapshot honored; Story 4-6 integration tests all green; no regressions.
+
+Sign-off conditions met:
+- All listed tests pass for both flag states ✅
+- No regressions vs `origin/main-next` baseline ✅
+- This artifact captures the verified evidence ✅
+- Notion devlog 2026-04-30 page link: https://www.notion.so/351f36619ad181d8ac63ed1061009992
 
 ## Sign-off conditions
 
