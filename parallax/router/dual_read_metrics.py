@@ -96,7 +96,7 @@ DEFAULT_DATA_QUALITY_FILTER: tuple[str, ...] = ("normal", "corpus_immature")
 
 _LOG_FILE_GLOB = "dual-read-decisions-*.jsonl"
 _LOG_FILE_DATE_RE = re.compile(r"^dual-read-decisions-(\d{4}-\d{2}-\d{2})\.jsonl$")
-_DEFAULT_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "parallax" / "logs"
+_DEFAULT_LOG_DIR = Path(__file__).resolve().parents[2] / "parallax" / "logs"
 
 
 def _resolve_log_dir(log_dir: Path | str | None) -> Path:

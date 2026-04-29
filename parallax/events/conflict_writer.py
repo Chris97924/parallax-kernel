@@ -24,6 +24,7 @@ Public surface
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import sqlite3
 import time
@@ -129,7 +130,7 @@ def _derive_canonical_ref(payload: Mapping[str, Any]) -> str:
     return NO_CANONICAL_REF_SENTINEL
 
 
-def _decision_payload_dict(decision: LiveArbitrationDecision) -> dict:
+def _decision_payload_dict(decision: LiveArbitrationDecision) -> dict[str, Any]:
     """Round-trip a frozen decision into a plain dict via its JSON line.
 
     Round-tripping (rather than reading dataclass fields directly) keeps
@@ -144,7 +145,7 @@ def _build_envelope(
     *,
     timestamp_us_utc: int,
     data_quality_flag: DataQualityFlag,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "event_type": "arbitration_conflict",
         "correlation_id": decision.correlation_id,
@@ -157,8 +158,6 @@ def _build_envelope(
 
 def _now_iso_from_us(now_us_utc: int) -> str:
     """Return an ISO-8601 UTC string for ``now_us_utc`` (microseconds)."""
-    import datetime as _dt
-
     seconds, micros = divmod(now_us_utc, 1_000_000)
     return (
         _dt.datetime.fromtimestamp(seconds, _dt.UTC)

@@ -25,6 +25,7 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING
 
+from parallax.events.conflict_writer import write_conflict_event
 from parallax.obs.log import get_logger
 from parallax.router.aphelion_stub import AphelionUnreachableError
 from parallax.router.circuit_breaker import get_breaker_state
@@ -34,6 +35,7 @@ from parallax.router.discrepancy_live import (
     DualReadOutcome,
     record_dual_read_outcome,
 )
+from parallax.router.dual_read_decision_log import append_decision
 from parallax.router.live_arbitration import arbitrate
 from parallax.router.ports import QueryPort
 
@@ -316,8 +318,6 @@ class DualReadRouter:
         write_error_observed = False
         if arbitration.requires_manual_review and self._events_conn is not None:
             try:
-                from parallax.events.conflict_writer import write_conflict_event
-
                 payload_for_writer = {
                     "primary": primary_result,
                     "secondary": secondary_result,
@@ -393,8 +393,6 @@ class DualReadRouter:
         canonical query path must never raise from observability code.
         """
         try:
-            from parallax.router.dual_read_decision_log import append_decision
-
             append_decision(
                 {
                     "correlation_id": correlation_id,
