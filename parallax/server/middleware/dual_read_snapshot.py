@@ -12,6 +12,17 @@ The circuit breaker is consulted at the same snapshot moment: if it is
 tripped the effective flag is forced to ``False`` regardless of the env var
 (fail-closed, per Q8 DECIDED, ralplan §10 2026-04-27).
 
+Caller contract (US-003)
+------------------------
+Route handlers that invoke ``DualReadRouter.query(...)`` MUST forward
+``request.state.dual_read`` as the ``dual_read_override`` keyword argument.
+Failing to thread the snapshot through is a wiring trap: the router will
+fall back to a fresh ``is_dual_read_enabled()`` env read AND skip the
+breaker check, which silently ignores both the rollback flag and the
+breaker for that request.  ``DualReadRouter.query`` emits a WARNING when
+it observes this gap with a currently-tripped breaker so the wiring
+omission surfaces in production logs.
+
 Critical bug-guard
 ------------------
 The inflight gauge increment/decrement is wrapped in ``try/finally`` so the

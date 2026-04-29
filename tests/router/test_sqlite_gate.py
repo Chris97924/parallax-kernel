@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+import weakref
 
 import pytest
 
@@ -60,9 +61,9 @@ def _counter_value(labeled_counter) -> float:
 def mem_conn():
     """Fresh in-memory sqlite connection (check_same_thread=False)."""
     c = sqlite3.connect(":memory:", check_same_thread=False)
-    SQLiteGate._pragma_applied.discard(id(c))
+    SQLiteGate._active_gate_by_conn_id.pop(id(c), None)
     yield c
-    SQLiteGate._pragma_applied.discard(id(c))
+    SQLiteGate._active_gate_by_conn_id.pop(id(c), None)
     c.close()
 
 
@@ -71,9 +72,9 @@ def file_conn(tmp_path):
     """Fresh file-backed sqlite connection for WAL pragma tests."""
     db_path = tmp_path / "test.db"
     c = sqlite3.connect(str(db_path), check_same_thread=False)
-    SQLiteGate._pragma_applied.discard(id(c))
+    SQLiteGate._active_gate_by_conn_id.pop(id(c), None)
     yield c
-    SQLiteGate._pragma_applied.discard(id(c))
+    SQLiteGate._active_gate_by_conn_id.pop(id(c), None)
     c.close()
 
 
@@ -108,7 +109,7 @@ def test_fetch_all_materializes_inside_lock(seeded_gate):
 
 @pytest.mark.unit
 def test_pragmas_applied_on_first_construction(file_conn):
-    SQLiteGate._pragma_applied.discard(id(file_conn))
+    SQLiteGate._active_gate_by_conn_id.pop(id(file_conn), None)
     SQLiteGate(file_conn, component="m3_dual_read")
 
     cur = file_conn.cursor()
@@ -127,35 +128,39 @@ def test_pragmas_applied_on_first_construction(file_conn):
 
 # ---------------------------------------------------------------------------
 # 3. Pragmas NOT re-applied on second gate for same connection
-#    Verified by checking _pragma_applied set membership and observing that
-#    PRAGMA journal_mode is still 'wal' (wasn't reset to defaults).
+#    Verified by checking the _active_gate_by_conn_id registry membership
+#    and observing that the second gate's pragma branch is skipped.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 def test_pragmas_not_reapplied_on_second_gate(file_conn):
-    SQLiteGate._pragma_applied.discard(id(file_conn))
+    SQLiteGate._active_gate_by_conn_id.pop(id(file_conn), None)
 
-    # First gate applies pragmas; id must be in _pragma_applied after.
-    SQLiteGate(file_conn, component="m3_dual_read")
-    assert id(file_conn) in SQLiteGate._pragma_applied
+    # First gate applies pragmas; the conn id is registered in the gate
+    # registry once construction completes.  Keep the gate alive so its
+    # weakref stays live while we construct the second gate below.
+    first_gate = SQLiteGate(file_conn, component="m3_dual_read")
+    assert id(file_conn) in SQLiteGate._active_gate_by_conn_id
 
-    # Second gate for same conn: id already present, so pragma block is skipped.
-    # We verify by subclassing to track whether _apply_wal_pragmas_once
-    # actually reaches the "execute pragma" branch.
+    # Second gate for same conn: the registry already holds a live weakref,
+    # so the pragma cursor branch is skipped.  Subclass to observe.
     pragma_execute_calls: list[str] = []
 
     class TrackingGate(SQLiteGate):
-        def _apply_wal_pragmas_once(self) -> None:
-            conn_id = id(self._conn)
-            with SQLiteGate._pragma_lock:
-                if conn_id in SQLiteGate._pragma_applied:
-                    # Short-circuit path — no pragma SQL should execute.
+        def _register_and_apply_pragmas(self) -> None:
+            cid = id(self._conn)
+            with SQLiteGate._registry_lock:
+                SQLiteGate._prune_dead_refs_locked()
+                existing = SQLiteGate._active_gate_by_conn_id.get(cid)
+                if existing is not None and existing() is not None:
                     pragma_execute_calls.append("skipped")
+                    SQLiteGate._active_gate_by_conn_id[cid] = weakref.ref(self)
                     return
-            super()._apply_wal_pragmas_once()
+            super()._register_and_apply_pragmas()
             pragma_execute_calls.append("applied")
 
+    assert first_gate is not None  # keep alive for the duration of the test
     TrackingGate(file_conn, component="ingest")
 
     assert pragma_execute_calls == [
@@ -333,8 +338,8 @@ def test_metric_errors_total_increments_on_sqlite_error(mem_conn):
 @pytest.mark.unit
 def test_component_label_isolation(mem_conn):
     conn2 = sqlite3.connect(":memory:", check_same_thread=False)
-    SQLiteGate._pragma_applied.discard(id(mem_conn))
-    SQLiteGate._pragma_applied.discard(id(conn2))
+    SQLiteGate._active_gate_by_conn_id.pop(id(mem_conn), None)
+    SQLiteGate._active_gate_by_conn_id.pop(id(conn2), None)
 
     try:
         mem_conn.execute("CREATE TABLE t (v INTEGER)")
@@ -361,7 +366,7 @@ def test_component_label_isolation(mem_conn):
         assert _hist_count(hist_m3) == before_m3 + 1
         assert _hist_count(hist_ingest) == before_ingest + 1
     finally:
-        SQLiteGate._pragma_applied.discard(id(conn2))
+        SQLiteGate._active_gate_by_conn_id.pop(id(conn2), None)
         conn2.close()
 
 
@@ -443,7 +448,7 @@ def test_background_checkpoint_stop_is_clean(mem_conn):
 
 @pytest.mark.unit
 def test_invalid_component_raises(mem_conn):
-    SQLiteGate._pragma_applied.discard(id(mem_conn))
+    SQLiteGate._active_gate_by_conn_id.pop(id(mem_conn), None)
     with pytest.raises(ValueError, match="component="):
         SQLiteGate(mem_conn, component="not_a_valid_component")
 
@@ -530,3 +535,58 @@ def test_metric_errors_write_op(mem_conn):
 
     after = _counter_value(counter)
     assert after > before, "Expected write errors_total counter to increment"
+
+
+# ---------------------------------------------------------------------------
+# US-007: _Cancellable.stop(join_timeout=0) escape-hatch path is tested
+#         (this branch was untested at the time of Ralph commit 6d302e1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_cancellable_stop_join_timeout_zero_skips_thread_join():
+    """``stop(join_timeout=0)`` must NOT call ``self._thread.join``.
+
+    The escape hatch exists for callers that explicitly want non-blocking
+    legacy behaviour.  If a future refactor changes ``> 0`` to ``>= 0``
+    in the join-timeout guard, this test will catch it.
+    """
+
+    class _RecordingThread:
+        def __init__(self) -> None:
+            self.join_calls: list[float | None] = []
+
+        def join(self, timeout: float | None = None) -> None:
+            self.join_calls.append(timeout)
+
+    stop_event = threading.Event()
+    fake_thread = _RecordingThread()
+    cancellable = _Cancellable(stop_event, thread=fake_thread)  # type: ignore[arg-type]
+
+    cancellable.stop(join_timeout=0)
+
+    assert stop_event.is_set(), "stop_event must be set even when skipping join"
+    assert (
+        fake_thread.join_calls == []
+    ), f"Expected zero join() calls when join_timeout=0; got {fake_thread.join_calls}"
+
+
+@pytest.mark.unit
+def test_cancellable_stop_default_join_timeout_calls_join():
+    """Sanity counter-test: default ``stop()`` (no kwarg) DOES call join."""
+
+    class _RecordingThread:
+        def __init__(self) -> None:
+            self.join_calls: list[float | None] = []
+
+        def join(self, timeout: float | None = None) -> None:
+            self.join_calls.append(timeout)
+
+    stop_event = threading.Event()
+    fake_thread = _RecordingThread()
+    cancellable = _Cancellable(stop_event, thread=fake_thread)  # type: ignore[arg-type]
+
+    cancellable.stop()
+
+    assert len(fake_thread.join_calls) == 1
+    assert fake_thread.join_calls[0] == _Cancellable._DEFAULT_JOIN_TIMEOUT_SECONDS

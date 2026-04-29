@@ -247,6 +247,11 @@ def test_secondary_timeout_classified_as_unreachable(monkeypatch: pytest.MonkeyP
     assert r.outcome == "aphelion_unreachable"
     assert r.aphelion_unreachable_reason == "timeout"
     assert r.primary is not None
+    # US-007: timeout path must NOT leak partial secondary fields onto the
+    # result.  pr-test-analyzer flagged this as a missed assertion that would
+    # let an accidental population of secondary on timeout slip through.
+    assert r.secondary is None
+    assert r.latency_secondary_ms is not None  # latency is recorded as the wait window
 
 
 def test_secondary_unexpected_exception_classified_as_primary_only(
@@ -334,7 +339,7 @@ def test_sqlite_cross_thread_safety(monkeypatch: pytest.MonkeyPatch, tmp_path) -
 
     db_path = tmp_path / "dual_read_test.db"
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    SQLiteGate._pragma_applied.discard(id(conn))
+    SQLiteGate._active_gate_by_conn_id.pop(id(conn), None)
     gate = SQLiteGate(conn, component="m3_dual_read")
 
     # Create a minimal schema; primary is a stub that uses gate.fetch_all.
@@ -367,7 +372,7 @@ def test_sqlite_cross_thread_safety(monkeypatch: pytest.MonkeyPatch, tmp_path) -
     for t in threads:
         t.join()
 
-    SQLiteGate._pragma_applied.discard(id(conn))
+    SQLiteGate._active_gate_by_conn_id.pop(id(conn), None)
     conn.close()
 
     programming_errors = [e for e in errors if isinstance(e, sqlite3.ProgrammingError)]
@@ -431,3 +436,168 @@ def test_aphelion_unreachable_reason_on_stub(monkeypatch: pytest.MonkeyPatch) ->
     r = _router(primary, secondary).query(_request())
     assert r.outcome == "aphelion_unreachable"
     assert r.aphelion_unreachable_reason == "not_implemented"
+
+
+# ---------------------------------------------------------------------------
+# US-001: _record() failures must not propagate (fail-closed invariant #1)
+# ---------------------------------------------------------------------------
+
+
+def test_record_dual_read_outcome_failure_does_not_propagate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If record_dual_read_outcome raises (Prometheus race), query() still
+    returns the canonical primary result. Primary must NEVER be lost.
+    """
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+
+    import parallax.router.dual_read as dr_mod
+
+    def _raising(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("synthetic prometheus failure")
+
+    monkeypatch.setattr(dr_mod, "record_dual_read_outcome", _raising)
+
+    r = _router(primary, secondary).query(_request())
+    assert isinstance(r, DualReadResult)
+    assert r.primary is not None
+
+
+def test_live_counter_record_failure_does_not_propagate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+    bad_counter = MagicMock(spec=LiveDiscrepancyCounter)
+    bad_counter.record.side_effect = RuntimeError("synthetic counter failure")
+
+    r = _router(primary, secondary, live_counter=bad_counter).query(_request())
+    assert isinstance(r, DualReadResult)
+    assert r.primary is not None
+    bad_counter.record.assert_called_once()
+
+
+def test_breaker_record_failure_does_not_propagate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+
+    import parallax.router.dual_read as dr_mod
+
+    class _BadBreaker:
+        def record_unreachable_observation(self, *, observed_unreachable: bool) -> None:
+            raise RuntimeError("synthetic breaker failure")
+
+    monkeypatch.setattr(dr_mod, "get_breaker_state", lambda: _BadBreaker())
+
+    r = _router(primary, secondary).query(_request())
+    assert isinstance(r, DualReadResult)
+    assert r.primary is not None
+
+
+# ---------------------------------------------------------------------------
+# US-001: _hits_equal failures classified as primary_only, not propagated
+# ---------------------------------------------------------------------------
+
+
+def test_hits_equal_failure_classified_primary_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A future M3b real adapter returning a malformed RetrievalEvidence (e.g.
+    hits=None or missing attribute) must NOT propagate AttributeError out of
+    query(). Reclassify as primary_only and preserve the primary result.
+    """
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+
+    class _MalformedSecondary:
+        def query(self, request: QueryRequest) -> object:
+            class _Bad:
+                hits = None  # _hits_equal expects an iterable
+                stages = ()
+
+            return _Bad()
+
+    r = _router(primary, _MalformedSecondary()).query(_request())
+    assert r.outcome == "primary_only"
+    assert r.primary is not None
+    assert r.secondary is None
+
+
+# ---------------------------------------------------------------------------
+# US-003: wiring-trap warning when dual_read_override=None + breaker tripped
+# ---------------------------------------------------------------------------
+
+
+def test_warning_logged_when_override_none_and_breaker_tripped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If a route handler forgets to pass dual_read_override and the breaker
+    is currently tripped, query() must log a WARNING so the wiring gap
+    surfaces in production logs.  The query still executes — warning is
+    observability, not a hard failure.
+
+    Captures via direct ``_log.warning`` monkeypatch because Parallax's
+    structured JSON logger has ``propagate=False`` and caplog cannot see
+    those records.
+    """
+    monkeypatch.setenv("DUAL_READ", "false")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+
+    import parallax.router.dual_read as dr_mod
+
+    class _TrippedBreaker:
+        def is_tripped(self) -> bool:
+            return True
+
+        def record_unreachable_observation(self, *, observed_unreachable: bool) -> None:
+            pass
+
+    monkeypatch.setattr(dr_mod, "get_breaker_state", lambda: _TrippedBreaker())
+
+    warning_calls: list[str] = []
+    monkeypatch.setattr(dr_mod._log, "warning", lambda msg, *a, **kw: warning_calls.append(msg))
+
+    r = _router(primary, secondary).query(_request())  # dual_read_override=None
+
+    assert isinstance(r, DualReadResult)
+    assert "dual_read_override_missing_with_tripped_breaker" in warning_calls, (
+        "Expected _log.warning('dual_read_override_missing_with_tripped_breaker') "
+        f"on this wiring gap. Got calls: {warning_calls}"
+    )
+
+
+def test_no_warning_when_override_passed_with_tripped_breaker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the caller correctly passes dual_read_override (even with the
+    breaker tripped) NO wiring-trap warning fires — the snapshot is honored.
+    """
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+
+    import parallax.router.dual_read as dr_mod
+
+    class _TrippedBreaker:
+        def is_tripped(self) -> bool:
+            return True
+
+        def record_unreachable_observation(self, *, observed_unreachable: bool) -> None:
+            pass
+
+    monkeypatch.setattr(dr_mod, "get_breaker_state", lambda: _TrippedBreaker())
+
+    warning_calls: list[str] = []
+    monkeypatch.setattr(dr_mod._log, "warning", lambda msg, *a, **kw: warning_calls.append(msg))
+
+    _router(primary, secondary).query(_request(), dual_read_override=False)
+
+    bad = [m for m in warning_calls if m == "dual_read_override_missing_with_tripped_breaker"]
+    assert not bad, "wiring-trap warning must NOT fire when override is passed"

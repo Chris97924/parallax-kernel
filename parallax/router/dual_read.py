@@ -60,6 +60,21 @@ class DualReadRouter:
     snapshots (T1.4 middleware) to override the env flag without re-reading env
     mid-request.  Pass ``True`` to force-enable, ``False`` to force-disable,
     or ``None`` to fall back to ``is_dual_read_enabled()``.
+
+    Wiring contract for callers in a request context (M3b/M4):
+        Route handlers calling ``query()`` MUST pass
+        ``dual_read_override=request.state.dual_read``.  The middleware in
+        ``parallax/server/middleware/dual_read_snapshot.py`` snapshots both
+        the env flag AND the circuit-breaker state at request entry — passing
+        the snapshot through is the only way to honor a tripped breaker for
+        the duration of an in-flight request.
+
+        If ``dual_read_override`` is ``None`` while the circuit breaker is
+        currently tripped, ``query()`` logs a WARNING (event
+        ``dual_read_override_missing_with_tripped_breaker``) so this wiring
+        gap surfaces in production logs rather than silently ignoring the
+        breaker.  The query still executes — the warning is observability,
+        not a hard failure.
     """
 
     def __init__(
@@ -95,6 +110,26 @@ class DualReadRouter:
         Primary failures DO propagate (fail-closed in the canonical direction).
         """
         cid = correlation_id if correlation_id is not None else str(uuid.uuid4())
+
+        # ------------------------------------------------------------------
+        # Wiring-trap guard (US-003): if a route handler forgot to pass the
+        # middleware snapshot AND the breaker is tripped, the env-fallback
+        # path silently ignores the breaker.  Surface the gap as a WARNING
+        # so it shows up in production logs and operators can fix the wire.
+        # ------------------------------------------------------------------
+        if dual_read_override is None:
+            try:
+                breaker_tripped = get_breaker_state().is_tripped()
+            except Exception:  # noqa: BLE001 — observability never crashes the request
+                breaker_tripped = False
+            if breaker_tripped:
+                _log.warning(
+                    "dual_read_override_missing_with_tripped_breaker",
+                    extra={
+                        "event": "dual_read_override_missing_with_tripped_breaker",
+                        "user_id": request.user_id,
+                    },
+                )
 
         # ------------------------------------------------------------------
         # Fast-path: flag off → skipped (zero overhead beyond 2 bool checks)
@@ -177,11 +212,27 @@ class DualReadRouter:
             exc = secondary_future.exception()
             if exc is None:
                 secondary_result = secondary_future.result()
-                # Compare hits.
-                if _hits_equal(primary_result, secondary_result):  # type: ignore[arg-type]
-                    outcome = "match"
+                # Compare hits. Guarded — a malformed secondary result (e.g.
+                # future M3b real adapter returning hits=None or missing attrs)
+                # would otherwise raise AttributeError/TypeError out of the
+                # protected block and propagate to the caller, violating
+                # invariant #4. Reclassify as primary_only when comparison
+                # blows up.
+                try:
+                    hits_equal = _hits_equal(primary_result, secondary_result)  # type: ignore[arg-type]
+                except (AttributeError, TypeError) as cmp_exc:
+                    _log.warning(
+                        "secondary_hits_equal_failed",
+                        extra={
+                            "event": "secondary_hits_equal_failed",
+                            "exc_class": type(cmp_exc).__name__,
+                            "exc_str": str(cmp_exc),
+                        },
+                    )
+                    outcome = "primary_only"
+                    secondary_result = None
                 else:
-                    outcome = "diverge"
+                    outcome = "match" if hits_equal else "diverge"
             elif isinstance(exc, AphelionUnreachableError):
                 outcome = "aphelion_unreachable"
                 unreachable_reason = exc.reason
@@ -217,13 +268,50 @@ class DualReadRouter:
     # ------------------------------------------------------------------
 
     def _record(self, user_id: str, outcome: DualReadOutcome) -> None:
-        """Record outcome to live counter + Prometheus gauges (optional)."""
-        record_dual_read_outcome(user_id=user_id, outcome=outcome)
+        """Record outcome to live counter + Prometheus gauges (optional).
+
+        Observability code MUST NEVER kill the request. A failing Prometheus
+        collector (label-cardinality cap, mid-reset race, internal client
+        bug) or a faulty live counter would otherwise propagate out of
+        ``query()`` and the caller would lose the canonical primary result
+        — that violates fail-closed invariant #1. Guard each side-effect.
+        """
+        try:
+            record_dual_read_outcome(user_id=user_id, outcome=outcome)
+        except Exception as exc:  # noqa: BLE001 — observability must not crash query path
+            _log.warning(
+                "record_dual_read_outcome_failed",
+                extra={
+                    "event": "record_dual_read_outcome_failed",
+                    "exc_class": type(exc).__name__,
+                    "exc_str": str(exc),
+                },
+            )
         if self._live_counter is not None:
-            self._live_counter.record(user_id=user_id, outcome=outcome)
+            try:
+                self._live_counter.record(user_id=user_id, outcome=outcome)
+            except Exception as exc:  # noqa: BLE001 — same rationale as above
+                _log.warning(
+                    "live_counter_record_failed",
+                    extra={
+                        "event": "live_counter_record_failed",
+                        "exc_class": type(exc).__name__,
+                        "exc_str": str(exc),
+                    },
+                )
         # T1.5: feed the rolling-window circuit breaker. Only count outcomes
         # where the secondary was actually attempted (not "skipped").
         if outcome != "skipped":
-            get_breaker_state().record_unreachable_observation(
-                observed_unreachable=(outcome == "aphelion_unreachable")
-            )
+            try:
+                get_breaker_state().record_unreachable_observation(
+                    observed_unreachable=(outcome == "aphelion_unreachable")
+                )
+            except Exception as exc:  # noqa: BLE001 — same rationale as above
+                _log.warning(
+                    "breaker_record_failed",
+                    extra={
+                        "event": "breaker_record_failed",
+                        "exc_class": type(exc).__name__,
+                        "exc_str": str(exc),
+                    },
+                )

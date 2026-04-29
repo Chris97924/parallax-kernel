@@ -13,10 +13,13 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 
+from parallax.obs.log import get_logger
 from parallax.router.circuit_breaker import get_breaker_state
 from parallax.server.auth import require_auth
 
 __all__ = ["router"]
+
+_log = get_logger("parallax.server.routes.admin.circuit_breaker")
 
 router = APIRouter(prefix="/admin/circuit_breaker", tags=["admin"])
 
@@ -27,6 +30,10 @@ async def reset_circuit_breaker() -> dict:
 
     Run ONLY after verifying Aphelion health — the breaker does NOT
     auto-recover (Q10 DECIDED, ralplan §10 line 552).
+
+    Audit (US-006): every reset emits a structured WARNING with
+    ``was_tripped`` + ``reset_at`` so a leaked bearer-token attempt to
+    suppress an outage by spamming reset is observable in logs.
 
     Returns
     -------
@@ -39,9 +46,18 @@ async def reset_circuit_breaker() -> dict:
     """
     state = get_breaker_state()
     was_tripped = state.is_tripped()
+    reset_at = datetime.now(UTC).isoformat()
+    _log.warning(
+        "circuit_breaker.reset.invoked",
+        extra={
+            "event": "circuit_breaker.reset.invoked",
+            "was_tripped": was_tripped,
+            "reset_at": reset_at,
+        },
+    )
     state.reset()
     return {
         "ok": True,
         "was_tripped": was_tripped,
-        "reset_at": datetime.now(UTC).isoformat(),
+        "reset_at": reset_at,
     }

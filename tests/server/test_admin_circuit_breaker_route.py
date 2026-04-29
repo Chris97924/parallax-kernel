@@ -153,3 +153,74 @@ def test_post_reset_emits_no_state_mutation_outside_singleton(auth_app):
         f"added={set(after) - set(before)}, "
         f"removed={set(before) - set(after)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# US-006: structured audit log on every reset (tripped + idempotent paths)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_post_reset_emits_audit_warning_on_tripped_breaker(
+    auth_app, monkeypatch: pytest.MonkeyPatch
+):
+    """Every reset must emit a structured WARNING for audit, regardless of
+    whether the breaker was tripped at call time. Captures via direct
+    monkeypatch since Parallax's structured logger has propagate=False.
+    """
+    # Trip the breaker first.
+    state = get_breaker_state()
+    for _ in range(60):
+        state.record_unreachable_observation(observed_unreachable=True)
+    assert state.is_tripped()
+
+    import parallax.server.routes.admin.circuit_breaker as admin_mod
+
+    audit_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        admin_mod._log,
+        "warning",
+        lambda msg, *a, **kw: audit_calls.append((msg, dict(kw))),
+    )
+
+    with TestClient(auth_app, raise_server_exceptions=False) as client:
+        resp = client.post(
+            "/admin/circuit_breaker/reset",
+            headers={"Authorization": f"Bearer {_TOKEN}"},
+        )
+
+    assert resp.status_code == 200
+    assert any(
+        msg == "circuit_breaker.reset.invoked" and kw.get("extra", {}).get("was_tripped") is True
+        for msg, kw in audit_calls
+    ), f"Expected audit WARNING with was_tripped=True; got {audit_calls}"
+
+
+@pytest.mark.integration
+def test_post_reset_emits_audit_warning_on_idempotent_no_op(
+    auth_app, monkeypatch: pytest.MonkeyPatch
+):
+    """Audit log fires even when the reset is a no-op (breaker already
+    untripped) — token-spam attacks must be observable regardless."""
+    assert get_breaker_state().is_tripped() is False
+
+    import parallax.server.routes.admin.circuit_breaker as admin_mod
+
+    audit_calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        admin_mod._log,
+        "warning",
+        lambda msg, *a, **kw: audit_calls.append((msg, dict(kw))),
+    )
+
+    with TestClient(auth_app, raise_server_exceptions=False) as client:
+        resp = client.post(
+            "/admin/circuit_breaker/reset",
+            headers={"Authorization": f"Bearer {_TOKEN}"},
+        )
+
+    assert resp.status_code == 200
+    assert any(
+        msg == "circuit_breaker.reset.invoked" and kw.get("extra", {}).get("was_tripped") is False
+        for msg, kw in audit_calls
+    ), f"Expected audit WARNING with was_tripped=False; got {audit_calls}"

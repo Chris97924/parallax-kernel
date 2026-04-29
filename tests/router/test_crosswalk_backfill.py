@@ -288,3 +288,31 @@ def _get_orphan_counter_value(user_id: str) -> float:
     except Exception:
         pass
     return 0.0
+
+
+# ---------------------------------------------------------------------------
+# US-002: backfill MUST refuse a connection that is wrapped by a live SQLiteGate
+# ---------------------------------------------------------------------------
+
+
+def test_backfill_refuses_gated_connection(tmp_path):
+    """Running backfill on a conn that is also serving dual-read traffic
+    would race the cross-thread sqlite invariant → SIGSEGV.  The guard
+    must raise ValueError with a clear message.
+    """
+    from parallax.migrations import migrate_to_latest
+    from parallax.router.sqlite_gate import SQLiteGate
+    from parallax.sqlite_store import connect
+
+    db = tmp_path / "p.db"
+    conn = connect(db)
+    try:
+        migrate_to_latest(conn)
+        gate = SQLiteGate(conn, component="m3_dual_read")  # registers in registry
+        assert gate is not None  # keep alive — registry holds a weakref
+
+        with pytest.raises(ValueError, match="SQLiteGate"):
+            backfill_crosswalk(conn, user_id="u1")
+    finally:
+        SQLiteGate._active_gate_by_conn_id.pop(id(conn), None)
+        conn.close()

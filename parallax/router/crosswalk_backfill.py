@@ -10,6 +10,23 @@ On miss, caller should invoke record_orphan_miss().
 
 Aphelion is NOT called here. The aphelion_doc_id column stays NULL
 during M3a; M4 will fill it.
+
+CONCURRENCY CONTRACT (critical — see ``parallax/router/sqlite_gate.py``):
+    ``backfill_crosswalk`` runs a multi-row scan + INSERT loop that can
+    examine up to ``CROSSWALK_BACKFILL_BATCH_LIMIT`` rows (default 10000).
+    It MUST NOT share its ``sqlite3.Connection`` with active dual-read
+    traffic.  ``sqlite3.Connection`` is not thread-safe; running the
+    backfill scan concurrently with a ``SQLiteGate``-mediated dual-read
+    read on the same connection violates the cross-thread cursor
+    invariant and risks ``sqlite3.ProgrammingError`` or — worse — a
+    SIGSEGV in the C extension (the exact bug ``SQLiteGate`` was
+    introduced to prevent).
+
+    To enforce this, ``backfill_crosswalk`` calls
+    ``SQLiteGate.is_connection_gated(conn)`` at entry and raises
+    ``ValueError`` if the connection is currently wrapped by a live
+    ``SQLiteGate``.  Operators must run this routine on a dedicated
+    connection (typically a fresh ``parallax.sqlite_store.connect``).
 """
 
 from __future__ import annotations
@@ -19,6 +36,8 @@ import datetime
 import os
 import sqlite3
 from typing import Final
+
+from parallax.router.sqlite_gate import SQLiteGate
 
 try:
     from prometheus_client import Counter as _PromCounter
@@ -84,7 +103,19 @@ def backfill_crosswalk(
     Returns BackfillStats describing what was examined and inserted.
     aphelion_doc_id / vault_path / last_event_id_seen / last_embedded_at
     are all left NULL — Aphelion wiring is M4 work.
+
+    Raises:
+        ValueError: if ``conn`` is currently wrapped by a live
+            ``SQLiteGate``.  See module docstring for the rationale —
+            the multi-row scan would race the gate's dual-read traffic
+            on the same connection.
     """
+    if SQLiteGate.is_connection_gated(conn):
+        raise ValueError(
+            "backfill_crosswalk(conn=...) called with a connection that is "
+            "currently wrapped by a live SQLiteGate. Use a dedicated "
+            "sqlite3.Connection for the backfill (see module docstring)."
+        )
     limit = _get_batch_limit(batch_limit)
     now = datetime.datetime.now(datetime.UTC).isoformat()
 

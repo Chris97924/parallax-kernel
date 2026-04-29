@@ -10,9 +10,17 @@ Q4 (ralplan §10 lines 587-616) must-do implementation notes:
     before releasing, so no cursor ever crosses the lock boundary (corruption risk).
   - WAL pragmas applied on first construction per connection; idempotent across
     subsequent ``SQLiteGate`` instances wrapping the same ``sqlite3.Connection``.
-    ``_pragma_applied`` is a class-level set keyed on ``id(connection)`` — this
-    assumes the caller does NOT close and re-open the same memory address for a
-    different logical db (safe for the current ZenBook single-process deployment).
+
+Connection registry (``_active_gate_by_conn_id``):
+    Class-level dict mapping ``id(connection)`` to a ``weakref.ref`` of the
+    wrapping ``SQLiteGate``.  This is GC-race-safe: when the wrapping gate is
+    garbage-collected, the weakref returns None, so a new gate constructed on
+    a new connection that happens to land at the same memory address will
+    correctly re-apply WAL pragmas instead of falsely skipping them.
+    Other modules can call :meth:`SQLiteGate.is_connection_gated` to detect
+    whether a connection is currently wrapped by a live gate (used by
+    ``parallax/router/crosswalk_backfill.py`` to refuse running its long-row
+    scan on a connection that is also serving dual-read traffic).
 """
 
 from __future__ import annotations
@@ -21,7 +29,8 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Any, Literal
+import weakref
+from typing import Any, ClassVar, Literal
 
 import prometheus_client
 
@@ -164,16 +173,15 @@ class SQLiteGate:
         gate.execute("UPDATE ...", (param,))
         gate.executemany("INSERT ...", batch)
 
-    WAL pragma assumption:
-        ``_pragma_applied`` is keyed on ``id(connection)`` — assumes the caller
-        does NOT close and re-open a new connection at the same memory address for
-        a different logical database within the same process lifetime.
-
     component label values: ``ingest`` | ``m2_shadow`` | ``regular_query`` | ``m3_dual_read``
     """
 
-    _pragma_applied: set[int] = set()
-    _pragma_lock = threading.Lock()  # guards _pragma_applied across threads
+    # id(connection) -> weakref to the SQLiteGate currently wrapping it. When
+    # the gate is GC'd, the weakref returns None, so a fresh gate on a
+    # connection at the same memory address (post-GC reuse) re-applies WAL
+    # pragmas instead of falsely skipping them. See module docstring.
+    _active_gate_by_conn_id: ClassVar[dict[int, weakref.ref[SQLiteGate]]] = {}
+    _registry_lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(
         self,
@@ -186,31 +194,57 @@ class SQLiteGate:
         self._conn = connection
         self._component = component
         self._lock = threading.Lock()
-        self._apply_wal_pragmas_once()
+        self._register_and_apply_pragmas()
+
+    # ------------------------------------------------------------------
+    # Class-level registry helpers (US-002 + US-004)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _prune_dead_refs_locked(cls) -> None:
+        """Drop entries whose weakref has expired. Caller MUST hold ``_registry_lock``."""
+        dead = [cid for cid, ref in cls._active_gate_by_conn_id.items() if ref() is None]
+        for cid in dead:
+            del cls._active_gate_by_conn_id[cid]
+
+    @classmethod
+    def is_connection_gated(cls, conn: sqlite3.Connection) -> bool:
+        """Return True if any live ``SQLiteGate`` is currently wrapping ``conn``.
+
+        Used by ``parallax/router/crosswalk_backfill.py`` to refuse the long-row
+        scan on a connection that is also serving dual-read traffic — running
+        them concurrently violates the cross-thread sqlite invariant and risks
+        SIGSEGV in the C extension (which is exactly the bug ``SQLiteGate``
+        exists to prevent).
+        """
+        with cls._registry_lock:
+            cls._prune_dead_refs_locked()
+            ref = cls._active_gate_by_conn_id.get(id(conn))
+            return ref is not None and ref() is not None
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _apply_wal_pragmas_once(self) -> None:
-        """Apply WAL pragmas on the first SQLiteGate constructed for this conn.
+    def _register_and_apply_pragmas(self) -> None:
+        """Register self in the gate registry and apply WAL pragmas if needed.
 
-        Uses a class-level set keyed on ``id(connection)`` so that subsequent
-        ``SQLiteGate`` instances wrapping the same connection skip re-application.
-        The pragma set operation is itself serialised by ``_pragma_lock``.
+        Pragmas are applied at most once per live wrapping gate per connection.
+        If a previous gate on this connection has been GC'd, its weakref will
+        be dead and we re-apply pragmas (defensive: pragmas are idempotent).
         """
-        conn_id = id(self._conn)
-        with SQLiteGate._pragma_lock:
-            if conn_id in SQLiteGate._pragma_applied:
-                return
-            # Apply inside the class-level pragma lock (not the instance lock, which
-            # doesn't exist yet when this is called from __init__).
-            cur = self._conn.cursor()
-            cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA synchronous=NORMAL")
-            cur.execute("PRAGMA wal_autocheckpoint=0")
-            cur.close()
-            SQLiteGate._pragma_applied.add(conn_id)
+        cid = id(self._conn)
+        with SQLiteGate._registry_lock:
+            SQLiteGate._prune_dead_refs_locked()
+            existing = SQLiteGate._active_gate_by_conn_id.get(cid)
+            need_apply = existing is None or existing() is None
+            if need_apply:
+                cur = self._conn.cursor()
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA synchronous=NORMAL")
+                cur.execute("PRAGMA wal_autocheckpoint=0")
+                cur.close()
+            SQLiteGate._active_gate_by_conn_id[cid] = weakref.ref(self)
 
     def _db_file(self) -> str | None:
         """Return the database file path from ``PRAGMA database_list``, or None.
@@ -220,6 +254,11 @@ class SQLiteGate:
         crosses the lock boundary can race a parallel SELECT in another
         thread and raise ProgrammingError. Mirrors the pattern in
         :meth:`_execute_op` and :meth:`start_background_checkpoint`.
+
+        Narrowed except (US-005): only ``sqlite3.Error`` and ``OSError`` are
+        swallowed.  Anything else (e.g. KeyboardInterrupt, SystemExit, or a
+        TypeError from a corrupt PRAGMA row shape) propagates so a real bug
+        does not silently disable WAL-size telemetry.
         """
         try:
             with self._lock:
@@ -231,20 +270,26 @@ class SQLiteGate:
                 # (seq, name, file) — we want the 'main' database file
                 if row[1] == "main" and row[2]:
                     return row[2]
-        except Exception:  # noqa: BLE001
+        except (sqlite3.Error, OSError):
             pass
         return None
 
     def _sample_wal_size(self) -> None:
-        """Update the WAL size gauge lazily (cheap os.path.getsize)."""
+        """Update the WAL size gauge lazily (cheap os.path.getsize).
+
+        Narrowed except (US-005): only a missing WAL file (which is the
+        expected case for in-memory DBs and pre-first-write file DBs) is
+        swallowed.  Permission denied, ENOSPC, and other ``OSError``
+        subclasses propagate so a real I/O problem is not hidden.
+        """
         db_file = self._db_file()
         if db_file:
             wal_path = db_file + "-wal"
             try:
                 size = os.path.getsize(wal_path)
                 _wal_size_gauge.set(size)
-            except OSError:
-                pass  # WAL file may not exist for in-memory DBs
+            except FileNotFoundError:
+                pass  # WAL file may not exist for in-memory or pre-first-write DBs
 
     def _execute_op(
         self,
@@ -265,10 +310,12 @@ class SQLiteGate:
         # Signal that we are waiting for the lock (process-wide queue depth).
         _queue_depth_gauge.inc()
         wait_start = time.perf_counter()
+        queue_decremented = False
         try:
             with self._lock:
                 wait_elapsed = time.perf_counter() - wait_start
                 _queue_depth_gauge.dec()
+                queue_decremented = True
                 _lock_wait_hist.labels(component=self._component, op=op).observe(wait_elapsed)
 
                 hold_start = time.perf_counter()
@@ -299,15 +346,15 @@ class SQLiteGate:
                 finally:
                     hold_elapsed = time.perf_counter() - hold_start
                     _lock_hold_hist.labels(component=self._component, op=op).observe(hold_elapsed)
-        except sqlite3.Error:
-            raise
-        except Exception:
-            # Ensure queue depth is decremented even on unexpected errors that
-            # occur before the lock is acquired.
-            raise
-        else:
-            if op == "read":
-                self._sample_wal_size()
+        finally:
+            # US-005: queue depth gauge MUST decrement on every path including
+            # pre-lock failures (e.g. a faulty Lock subclass raising on
+            # __enter__).  Without this, the gauge over-counts permanently.
+            if not queue_decremented:
+                _queue_depth_gauge.dec()
+
+        if op == "read":
+            self._sample_wal_size()
         return result
 
     # ------------------------------------------------------------------
@@ -350,7 +397,18 @@ class SQLiteGate:
                         cur = self._conn.cursor()
                         cur.execute("PRAGMA wal_checkpoint(PASSIVE)")
                         cur.close()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001 — daemon must survive
+                    # US-005: bump Prometheus counter so persistent checkpoint
+                    # failures (disk full, closed conn) are alertable.  The
+                    # WARNING log alone produces noise without a metric signal.
+                    try:
+                        _errors_counter.labels(
+                            code="checkpoint_failed",
+                            component=self._component,
+                            op="write",
+                        ).inc()
+                    except Exception:  # noqa: BLE001 — observability must never crash daemon
+                        pass
                     _log.warning(
                         "wal_checkpoint_failed",
                         extra={"event": "wal_checkpoint_failed", "error": str(exc)},
