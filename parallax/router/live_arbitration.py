@@ -158,7 +158,12 @@ def arbitrate(
          (crosswalk-miss). This applies regardless of ``query_type``.
       2. Else, if ``primary`` is empty → still ``"fallback"`` (we cannot
          claim a parallax win without parallax data).
-      3. Else, lookup ``_QT_OWNERSHIP[query_type]`` and return that.
+      3. Else, lookup ``_QT_OWNERSHIP.get(query_type, "fallback")`` and
+         return that.  Unknown QueryType values resolve to ``"fallback"``
+         rather than raising KeyError — this preserves the fail-closed
+         invariant: a forward-compat caller passing a freshly added
+         QueryType not yet in the ownership table can still arbitrate
+         without crashing the request path.
 
     Pure function: no I/O, no logging, no global state.  ``arbitrate``
     constructs a fresh ``LiveArbitrationDecision`` and returns it.
@@ -166,7 +171,7 @@ def arbitrate(
     if _is_empty(secondary) or _is_empty(primary):
         winning_source: WinningSource = "fallback"
     else:
-        winning_source = _QT_OWNERSHIP[query_type]
+        winning_source = _QT_OWNERSHIP.get(query_type, "fallback")
 
     reason_code = f"source-level/{query_type.value}/{winning_source}"
     decided_at_us_utc = time.time_ns() // 1_000

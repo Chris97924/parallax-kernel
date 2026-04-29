@@ -304,3 +304,35 @@ def test_decision_is_frozen() -> None:
     decision = _build("parallax")
     with pytest.raises(dataclasses.FrozenInstanceError):
         decision.winning_source = "tie"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# H3 — _QT_OWNERSHIP fail-closed: unknown QueryType must NOT raise KeyError
+# ---------------------------------------------------------------------------
+
+
+def test_arbitrate_unknown_query_type_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story H3 — an unknown QueryType resolves to ``"fallback"`` (no KeyError).
+
+    Since QueryType is a closed StrEnum, simulate an "unknown" member by
+    monkey-patching the ownership table to remove the chosen QueryType from
+    its keys for the duration of the call. arbitrate() must then look up
+    via .get(...) and return ``"fallback"`` rather than raising.
+    """
+    from parallax.router import live_arbitration as la_mod
+
+    # Build a copy without RECENT_CONTEXT to simulate an unknown lookup.
+    patched = dict(la_mod._QT_OWNERSHIP)
+    del patched[QueryType.RECENT_CONTEXT]
+    monkeypatch.setattr(la_mod, "_QT_OWNERSHIP", patched)
+
+    decision = arbitrate(
+        _evidence("a"),
+        _evidence("a"),
+        QueryType.RECENT_CONTEXT,
+        correlation_id="cid-h3",
+    )
+    assert decision.winning_source == "fallback"
+    # reason_code should signal the unknown / fallback path so an operator
+    # can grep for it in production logs.
+    assert "fallback" in decision.reason_code
