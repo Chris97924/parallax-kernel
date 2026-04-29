@@ -178,6 +178,15 @@ class DualReadRouter:
                 aphelion_unreachable_reason=None,
             )
             self._record(request.user_id, result.outcome)
+            self._log_decision(
+                outcome="skipped",
+                correlation_id=cid,
+                query_type=request.query_type.value,
+                winning_source=None,
+                policy_version="",
+                conflict_event_id=None,
+                write_error_observed=False,
+            )
             return result
 
         # ------------------------------------------------------------------
@@ -201,6 +210,15 @@ class DualReadRouter:
                 aphelion_unreachable_reason=None,
             )
             self._record(request.user_id, result.outcome)
+            self._log_decision(
+                outcome="skipped",
+                correlation_id=cid,
+                query_type=request.query_type.value,
+                winning_source=None,
+                policy_version="",
+                conflict_event_id=None,
+                write_error_observed=False,
+            )
             return result
 
         # ------------------------------------------------------------------
@@ -334,11 +352,67 @@ class DualReadRouter:
         )
 
         self._record(request.user_id, outcome)
+        # JSONL-PRODUCER — record dual-read decision for downstream metrics.
+        # Map the per-call outcome onto the producer's 4-value vocabulary:
+        # match/diverge/primary_only → "dual_attempted"; "aphelion_unreachable"
+        # stays its own bucket for the unreachable_rate gauge.
+        producer_outcome = (
+            "aphelion_unreachable"
+            if outcome == "aphelion_unreachable"
+            else "primary_only" if outcome == "primary_only" else "dual_attempted"
+        )
+        self._log_decision(
+            outcome=producer_outcome,
+            correlation_id=cid,
+            query_type=request.query_type.value,
+            winning_source=arbitration.winning_source,
+            policy_version=arbitration.policy_version,
+            conflict_event_id=arbitration.conflict_event_id,
+            write_error_observed=write_error_observed,
+        )
         return result
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _log_decision(
+        self,
+        *,
+        outcome: str,
+        correlation_id: str,
+        query_type: str,
+        winning_source: str | None,
+        policy_version: str,
+        conflict_event_id: str | None,
+        write_error_observed: bool,
+    ) -> None:
+        """Best-effort append to the dual-read decision JSONL log.
+
+        Best-effort: any failure inside the producer is swallowed; the
+        canonical query path must never raise from observability code.
+        """
+        try:
+            from parallax.router.dual_read_decision_log import append_decision
+
+            append_decision(
+                {
+                    "correlation_id": correlation_id,
+                    "query_type": query_type,
+                    "outcome": outcome,
+                    "winning_source": winning_source,
+                    "policy_version": policy_version,
+                    "write_error_observed": write_error_observed,
+                    "conflict_event_id": conflict_event_id,
+                    "data_quality_flag": "normal",
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 — observability never crashes
+            _safe_log_warning(
+                "decision_log_append_failed",
+                exc_class=type(exc).__name__,
+                exc_str=str(exc),
+            )
 
     def _record(self, user_id: str, outcome: DualReadOutcome) -> None:
         """Record outcome to live counter + Prometheus gauges (optional).

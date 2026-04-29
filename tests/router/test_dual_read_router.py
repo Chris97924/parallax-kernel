@@ -714,3 +714,34 @@ def test_conflict_event_written_when_requires_manual_review(
         assert rows[0]["event_id"] == r.arbitration.conflict_event_id
     finally:
         events_conn.close()
+
+
+# ---------------------------------------------------------------------------
+# JSONL-PRODUCER integration: query() appends to the decision log
+# ---------------------------------------------------------------------------
+
+
+def test_query_appends_to_decision_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story JSONL-PRODUCER — every query() call must produce one JSONL line."""
+    import json
+
+    monkeypatch.setenv("DUAL_READ", "true")
+    monkeypatch.setenv("DUAL_READ_LOG_ENABLED", "true")
+    monkeypatch.setenv("DUAL_READ_LOG_DIR", str(tmp_path))
+
+    primary = _StubPort(_evidence("a"))
+    secondary = _StubPort(_evidence("a"))
+    router = DualReadRouter(primary=primary, secondary=secondary)
+    r = router.query(_request(QueryType.RECENT_CONTEXT))
+    assert r.outcome == "match"
+
+    files = sorted(tmp_path.glob("dual-read-decisions-*.jsonl"))
+    assert len(files) == 1, f"expected exactly 1 daily file, got {files}"
+    lines = [line for line in files[0].read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["correlation_id"] == r.correlation_id
+    assert record["outcome"] == "dual_attempted"
+    assert record["query_type"] == "recent_context"
+    assert record["winning_source"] == "parallax"
+    assert record["schema_version"] == "1.0"
