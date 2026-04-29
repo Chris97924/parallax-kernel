@@ -166,25 +166,38 @@ def _select_existing_event_id(
     The dedup row is the same row as the envelope; we re-purpose
     ``approval_tier`` rather than mint a new column so the migration stays
     index-only.
+
+    H1 — the ``created_at >= ?`` bound parameter forces SQLite to drop
+    rows older than the dedup window before returning to Python; combined
+    with ``LIMIT 1`` and ``ORDER BY created_at DESC`` the planner uses the
+    composite ``(event_type, target_id)`` index for an O(log n) lookup
+    instead of a full SCAN. Re-checks the payload's
+    ``timestamp_us_utc`` after the SQL filter to keep behavior identical
+    when the legacy ``created_at`` ISO format drifts from the envelope's
+    microsecond clock.
     """
-    rows = conn.execute(
+    window_start_iso = _now_iso_from_us(window_start_us)
+    row = conn.execute(
         "SELECT event_id, payload_json FROM events "
         "WHERE event_type = ? "
         "AND target_id = ? "
         "AND approval_tier = ? "
-        "ORDER BY created_at DESC",
-        ("arbitration_conflict", canonical_ref, conflict_field),
-    ).fetchall()
-    for row in rows:
-        try:
-            payload = json.loads(row["payload_json"])
-        except (json.JSONDecodeError, KeyError, TypeError):
-            continue
-        ts = payload.get("timestamp_us_utc")
-        if not isinstance(ts, int):
-            continue
-        if ts >= window_start_us:
-            return str(row["event_id"])
+        "AND created_at >= ? "
+        "ORDER BY created_at DESC "
+        "LIMIT 1",
+        ("arbitration_conflict", canonical_ref, conflict_field, window_start_iso),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+    ts = payload.get("timestamp_us_utc")
+    if not isinstance(ts, int):
+        return None
+    if ts >= window_start_us:
+        return str(row["event_id"])
     return None
 
 

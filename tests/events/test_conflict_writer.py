@@ -364,3 +364,77 @@ def test_migration_creates_event_type_correlation_id_index(
         assert idx is not None
     finally:
         c.close()
+
+
+# ---------------------------------------------------------------------------
+# H1 — dedup SELECT scaling: created_at filter + LIMIT 1 + index usage
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_select_uses_index(conn: sqlite3.Connection) -> None:
+    """The dedup SELECT must hit the (event_type, target_id) index, not scan.
+
+    Story H1 — the original SELECT had no created_at filter and no LIMIT, so
+    EXPLAIN QUERY PLAN would emit a SCAN over all matching rows. Adding the
+    bound created_at parameter + LIMIT 1 forces SQLite's planner to use the
+    composite index keyed on (event_type, target_id) for an O(log n) lookup.
+    """
+    # The dedup SELECT now mirrors what _select_existing_event_id issues.
+    plan_rows = conn.execute(
+        "EXPLAIN QUERY PLAN "
+        "SELECT event_id, payload_json FROM events "
+        "WHERE event_type = ? "
+        "AND target_id = ? "
+        "AND approval_tier = ? "
+        "AND created_at >= ? "
+        "ORDER BY created_at DESC "
+        "LIMIT 1",
+        ("arbitration_conflict", "test-canonical", "source-level", "1970-01-01T00:00:00Z"),
+    ).fetchall()
+    plan_text = "\n".join(str(row[3]) if len(row) > 3 else str(row) for row in plan_rows)
+    assert (
+        "USING INDEX" in plan_text or "USING COVERING INDEX" in plan_text
+    ), f"Expected dedup SELECT to use an index. Got plan:\n{plan_text}"
+
+
+def test_dedup_select_filters_by_created_at_in_sql(conn: sqlite3.Connection) -> None:
+    """The dedup window check must filter created_at in the SQL WHERE clause.
+
+    Story H1 — proves the SQL contains the AND created_at >= ? bound
+    parameter so old rows do not flow through Python before being filtered.
+
+    Approach: wrap the real connection in a thin proxy that captures every
+    ``execute`` call's SQL, hand the proxy to ``_select_existing_event_id``,
+    and assert the captured SELECT contains the new clause + LIMIT.
+    """
+    from parallax.events import conflict_writer as cw_mod
+
+    captured: list[str] = []
+
+    class _CapturingConn:
+        def __init__(self, real: sqlite3.Connection) -> None:
+            self._real = real
+
+        def execute(self, sql, *args, **kwargs):
+            captured.append(sql)
+            return self._real.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name: str):
+            return getattr(self._real, name)
+
+    proxy = _CapturingConn(conn)
+    cw_mod._select_existing_event_id(
+        proxy,  # type: ignore[arg-type]
+        canonical_ref="anything",
+        conflict_field="source-level",
+        window_start_us=0,
+    )
+
+    select_sqls = [s for s in captured if "SELECT event_id, payload_json FROM events" in s]
+    assert select_sqls, "expected _select_existing_event_id to issue the dedup SELECT"
+    assert any(
+        "created_at >= ?" in s for s in select_sqls
+    ), f"dedup SELECT missing created_at filter: {select_sqls!r}"
+    assert any(
+        "LIMIT 1" in s for s in select_sqls
+    ), f"dedup SELECT missing LIMIT 1: {select_sqls!r}"
