@@ -601,3 +601,66 @@ def test_no_warning_when_override_passed_with_tripped_breaker(
 
     bad = [m for m in warning_calls if m == "dual_read_override_missing_with_tripped_breaker"]
     assert not bad, "wiring-trap warning must NOT fire when override is passed"
+
+
+# ---------------------------------------------------------------------------
+# M3b Phase 2 (US-004-M3-T2.1) — LiveArbitrationDecision wiring
+# ---------------------------------------------------------------------------
+
+
+def test_arbitration_attached_for_parallax_owned_qt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RECENT_CONTEXT with both sides populated → arbitration.winning_source='parallax'."""
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+    r = _router(primary, secondary).query(_request(QueryType.RECENT_CONTEXT))
+
+    assert r.arbitration is not None
+    assert r.arbitration.winning_source == "parallax"
+    assert r.arbitration.query_type == QueryType.RECENT_CONTEXT
+    assert r.arbitration.correlation_id == r.correlation_id
+    assert r.arbitration.requires_manual_review is False
+
+
+def test_arbitration_attached_for_aphelion_owned_qt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ENTITY_PROFILE with both sides populated → arbitration.winning_source='aphelion'."""
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+    r = _router(primary, secondary).query(_request(QueryType.ENTITY_PROFILE))
+
+    assert r.arbitration is not None
+    assert r.arbitration.winning_source == "aphelion"
+    assert r.arbitration.query_type == QueryType.ENTITY_PROFILE
+    assert r.arbitration.correlation_id == r.correlation_id
+    assert r.arbitration.requires_manual_review is False
+
+
+def test_arbitration_falls_back_when_secondary_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """aphelion_unreachable path: secondary=None → arbitration.winning_source='fallback'."""
+    monkeypatch.setenv("DUAL_READ", "true")
+    primary = _StubPort(_n_hits())
+    secondary = _RaisingPort(AphelionUnreachableError("not_implemented"))
+    r = _router(primary, secondary).query(_request(QueryType.RECENT_CONTEXT))
+
+    assert r.outcome == "aphelion_unreachable"
+    assert r.arbitration is not None
+    assert r.arbitration.winning_source == "fallback"
+    assert r.arbitration.requires_manual_review is True
+
+
+def test_arbitration_none_when_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Flag-off skipped path: arbitration is None (no dual dispatch happened)."""
+    monkeypatch.delenv("DUAL_READ", raising=False)
+    primary = _StubPort(_n_hits())
+    secondary = _StubPort(_n_hits())
+    r = _router(primary, secondary).query(_request())
+
+    assert r.outcome == "skipped"
+    assert r.arbitration is None

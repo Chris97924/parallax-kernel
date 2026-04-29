@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from parallax.retrieval.contracts import RetrievalEvidence
+from parallax.router.live_arbitration import LiveArbitrationDecision
 from parallax.router.types import FieldCandidate, MappingState, QueryType
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "ArbitrationDecision",
     "RetrievalEvidence",
     "DualReadResult",
+    "LiveArbitrationDecision",
 ]
 
 
@@ -191,3 +193,8 @@ class DualReadResult:
     latency_primary_ms: float
     latency_secondary_ms: float | None
     aphelion_unreachable_reason: str | None
+    # M3b Phase 2 (US-004-M3-T2.1): live cross-store arbitration verdict.
+    # Optional for backward compatibility — None when arbitration was not
+    # invoked (e.g. pre-M3b call sites, or skipped/aphelion_unreachable
+    # paths where there is no secondary to weigh against).
+    arbitration: LiveArbitrationDecision | None = None

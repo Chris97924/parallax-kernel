@@ -94,6 +94,8 @@ def test_primary_always_set() -> None:
 
 def test_fields() -> None:
     names = [f.name for f in dataclasses.fields(DualReadResult)]
+    # ``arbitration`` is the M3b Phase 2 additive field (US-004-M3-T2.1) and
+    # has a default of ``None`` so existing call sites stay backward compatible.
     assert names == [
         "outcome",
         "primary",
@@ -102,6 +104,7 @@ def test_fields() -> None:
         "latency_primary_ms",
         "latency_secondary_ms",
         "aphelion_unreachable_reason",
+        "arbitration",
     ]
 
 

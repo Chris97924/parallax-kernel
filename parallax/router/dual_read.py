@@ -32,6 +32,7 @@ from parallax.router.discrepancy_live import (
     DualReadOutcome,
     record_dual_read_outcome,
 )
+from parallax.router.live_arbitration import arbitrate
 from parallax.router.ports import QueryPort
 
 # Import _hits_equal from shadow.py directly (Q7: reuse, do NOT copy-paste).
@@ -263,6 +264,19 @@ class DualReadRouter:
                 outcome = "primary_only"
                 secondary_result = None
 
+        # M3b Phase 2 (US-004-M3-T2.1): live cross-store arbitration. We
+        # ran the dual dispatch — ``arbitrate`` is pure, no I/O, and
+        # correctly resolves ``"fallback"`` when ``secondary_result`` is
+        # ``None`` or empty (crosswalk-miss path).  Attach the verdict
+        # only on dual-attempt paths; ``"skipped"`` short-circuits above
+        # never reach here.
+        arbitration = arbitrate(
+            primary=primary_result,  # type: ignore[arg-type]
+            secondary=secondary_result,  # type: ignore[arg-type]
+            query_type=request.query_type,
+            correlation_id=cid,
+        )
+
         result = DualReadResult(
             outcome=outcome,
             primary=primary_result,  # type: ignore[arg-type]
@@ -271,6 +285,7 @@ class DualReadRouter:
             latency_primary_ms=latency_primary_ms,
             latency_secondary_ms=latency_secondary_ms,
             aphelion_unreachable_reason=unreachable_reason,
+            arbitration=arbitration,
         )
 
         self._record(request.user_id, outcome)
