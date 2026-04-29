@@ -48,6 +48,16 @@ from prometheus_client import (
 
 from parallax.obs.log import get_logger as _get_logger
 from parallax.obs.metrics import registry as _inhouse_registry
+from parallax.router.dual_read_metrics import (
+    arbitration_conflict_rate as _dual_read_arbitration_conflict_rate,
+)
+from parallax.router.dual_read_metrics import (
+    discrepancy_rate as _dual_read_discrepancy_rate,
+)
+from parallax.router.dual_read_metrics import (
+    write_error_rate as _dual_read_write_error_rate,
+)
+from parallax.router.live_arbitration import POLICY_VERSION_DEFAULT
 from parallax.server.auth import (
     bearer_security,
     metrics_auth_required,
@@ -74,8 +84,18 @@ _RESERVED_GAUGE_SUFFIXES = frozenset(
         "shadow_discrepancy_rate",
         "shadow_checksum_consistency",
         "shadow_log_records_total",
+        "dual_read_discrepancy_rate",
+        "arbitration_conflict_rate",
+        "dual_read_write_error_rate",
+        "arbitration_p99_latency_ms",
+        "arbitration_policy_version",
     }
 )
+
+# Dual-read DoD measurement window (M3b — US-006). Mirrors the 72h DoD
+# numerics from ralplan §6 line 416-426. Kept as a module constant rather
+# than a magic literal so an operator can grep for it.
+_DUAL_READ_WINDOW = "72h"
 
 router = APIRouter(tags=["meta"])
 
@@ -254,6 +274,81 @@ def _build_payload() -> str:
         registry=reg,
     )
     log_count.set(metrics["log_records_total"])
+
+    # ------------------------------------------------------------------
+    # M3b dual-read gauges (US-006-M3-T2.3). Best-effort: any failure in
+    # the file-based metric computation is swallowed and surfaced as 0.0
+    # so an empty / missing dual-read log directory does not 500 the
+    # scrape. The DoD CLI surfaces breaches with full detail; /metrics is
+    # the live observability surface and must stay up.
+    # ------------------------------------------------------------------
+    try:
+        dr_discrepancy = _dual_read_discrepancy_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001 — observability never crashes scrape
+        _log.warning(
+            "metric.dual_read_discrepancy_rate_failed",
+            extra={"event": "metric.dual_read_discrepancy_rate_failed", "exc": str(exc)},
+        )
+        dr_discrepancy = 0.0
+    Gauge(
+        "parallax_dual_read_discrepancy_rate",
+        "Fraction of dual-read outcomes == 'diverge' over the 72h DoD window. "
+        "Denominator excludes aphelion_unreachable.",
+        registry=reg,
+    ).set(dr_discrepancy)
+
+    try:
+        ar_conflict = _dual_read_arbitration_conflict_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "metric.arbitration_conflict_rate_failed",
+            extra={"event": "metric.arbitration_conflict_rate_failed", "exc": str(exc)},
+        )
+        ar_conflict = 0.0
+    Gauge(
+        "parallax_arbitration_conflict_rate",
+        "Fraction of dual-read outcomes that produced an arbitration conflict "
+        "(winning_source in {tie, fallback}) over the 72h DoD window.",
+        registry=reg,
+    ).set(ar_conflict)
+
+    try:
+        wr_error = _dual_read_write_error_rate(_DUAL_READ_WINDOW)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning(
+            "metric.dual_read_write_error_rate_failed",
+            extra={"event": "metric.dual_read_write_error_rate_failed", "exc": str(exc)},
+        )
+        wr_error = 0.0
+    Gauge(
+        "parallax_dual_read_write_error_rate",
+        "Fraction of dual-read attempts that reported a write error over the 72h "
+        "DoD window. Denominator excludes aphelion_unreachable.",
+        registry=reg,
+    ).set(wr_error)
+
+    # Architect-flagged observability gap: real arbitration p99 latency wiring
+    # is deferred to a future T1.4 follow-up. Expose 0.0 as a placeholder so
+    # downstream Grafana panels do not 404 on the metric.
+    Gauge(
+        "parallax_arbitration_p99_latency_ms",
+        "p99 latency of arbitrate() over the rolling 72h window — placeholder "
+        "(real latency wired by T1.4 follow-up).",
+        registry=reg,
+    ).set(0.0)
+
+    # Info-metric (Q1' wiring): expose the live arbitration policy version as
+    # a label on a constant 1.0-valued gauge so Prometheus joins on this
+    # series cleanly. Mirror the prometheus_client info-metric idiom without
+    # pulling in the ``Info`` collector (it would name the series differently
+    # and break the test contract).
+    policy_gauge = Gauge(
+        "parallax_arbitration_policy_version",
+        "Live cross-store arbitration policy version (info-metric).",
+        labelnames=["policy_version"],
+        registry=reg,
+    )
+    policy_gauge.labels(policy_version=POLICY_VERSION_DEFAULT).set(1.0)
 
     return generate_latest(reg).decode("utf-8")
 
