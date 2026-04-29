@@ -31,9 +31,9 @@ async def reset_circuit_breaker() -> dict:
     Run ONLY after verifying Aphelion health — the breaker does NOT
     auto-recover (Q10 DECIDED, ralplan §10 line 552).
 
-    Audit (US-006): every reset emits a structured WARNING with
-    ``was_tripped`` + ``reset_at`` so a leaked bearer-token attempt to
-    suppress an outage by spamming reset is observable in logs.
+    Every reset emits a structured WARNING with ``was_tripped`` +
+    ``reset_at`` so a leaked bearer-token attempt to suppress an outage
+    by spamming reset is observable in logs.
 
     Returns
     -------

@@ -538,8 +538,7 @@ def test_metric_errors_write_op(mem_conn):
 
 
 # ---------------------------------------------------------------------------
-# US-007: _Cancellable.stop(join_timeout=0) escape-hatch path is tested
-#         (this branch was untested at the time of Ralph commit 6d302e1)
+# _Cancellable.stop(join_timeout=0) escape-hatch path
 # ---------------------------------------------------------------------------
 
 

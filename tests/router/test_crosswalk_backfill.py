@@ -291,7 +291,7 @@ def _get_orphan_counter_value(user_id: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# US-002: backfill MUST refuse a connection that is wrapped by a live SQLiteGate
+# Backfill must refuse a connection that is wrapped by a live SQLiteGate
 # ---------------------------------------------------------------------------
 
 

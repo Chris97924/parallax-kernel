@@ -156,7 +156,7 @@ def test_post_reset_emits_no_state_mutation_outside_singleton(auth_app):
 
 
 # ---------------------------------------------------------------------------
-# US-006: structured audit log on every reset (tripped + idempotent paths)
+# Structured audit log on every reset (tripped + idempotent paths)
 # ---------------------------------------------------------------------------
 
 

@@ -247,9 +247,9 @@ def test_secondary_timeout_classified_as_unreachable(monkeypatch: pytest.MonkeyP
     assert r.outcome == "aphelion_unreachable"
     assert r.aphelion_unreachable_reason == "timeout"
     assert r.primary is not None
-    # US-007: timeout path must NOT leak partial secondary fields onto the
-    # result.  pr-test-analyzer flagged this as a missed assertion that would
-    # let an accidental population of secondary on timeout slip through.
+    # Timeout path must NOT leak partial secondary fields onto the result;
+    # accidental population of ``secondary`` on a timeout would otherwise
+    # slip through unnoticed.
     assert r.secondary is None
     assert r.latency_secondary_ms is not None  # latency is recorded as the wait window
 
@@ -439,7 +439,7 @@ def test_aphelion_unreachable_reason_on_stub(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ---------------------------------------------------------------------------
-# US-001: _record() failures must not propagate (fail-closed invariant #1)
+# _record() failures must not propagate (fail-closed invariant #1)
 # ---------------------------------------------------------------------------
 
 
@@ -501,7 +501,7 @@ def test_breaker_record_failure_does_not_propagate(
 
 
 # ---------------------------------------------------------------------------
-# US-001: _hits_equal failures classified as primary_only, not propagated
+# _hits_equal failures classified as primary_only, not propagated
 # ---------------------------------------------------------------------------
 
 
@@ -530,7 +530,7 @@ def test_hits_equal_failure_classified_primary_only(
 
 
 # ---------------------------------------------------------------------------
-# US-003: wiring-trap warning when dual_read_override=None + breaker tripped
+# Wiring-trap warning when dual_read_override=None + breaker tripped
 # ---------------------------------------------------------------------------
 
 

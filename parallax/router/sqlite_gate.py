@@ -197,7 +197,7 @@ class SQLiteGate:
         self._register_and_apply_pragmas()
 
     # ------------------------------------------------------------------
-    # Class-level registry helpers (US-002 + US-004)
+    # Class-level registry helpers
     # ------------------------------------------------------------------
 
     @classmethod
@@ -255,10 +255,10 @@ class SQLiteGate:
         thread and raise ProgrammingError. Mirrors the pattern in
         :meth:`_execute_op` and :meth:`start_background_checkpoint`.
 
-        Narrowed except (US-005): only ``sqlite3.Error`` and ``OSError`` are
-        swallowed.  Anything else (e.g. KeyboardInterrupt, SystemExit, or a
-        TypeError from a corrupt PRAGMA row shape) propagates so a real bug
-        does not silently disable WAL-size telemetry.
+        Narrowed except: only ``sqlite3.Error`` and ``OSError`` are swallowed.
+        Anything else (e.g. KeyboardInterrupt, SystemExit, or a TypeError
+        from a corrupt PRAGMA row shape) propagates so a real bug does not
+        silently disable WAL-size telemetry.
         """
         try:
             with self._lock:
@@ -277,10 +277,10 @@ class SQLiteGate:
     def _sample_wal_size(self) -> None:
         """Update the WAL size gauge lazily (cheap os.path.getsize).
 
-        Narrowed except (US-005): only a missing WAL file (which is the
-        expected case for in-memory DBs and pre-first-write file DBs) is
-        swallowed.  Permission denied, ENOSPC, and other ``OSError``
-        subclasses propagate so a real I/O problem is not hidden.
+        Narrowed except: only a missing WAL file (which is the expected
+        case for in-memory DBs and pre-first-write file DBs) is swallowed.
+        Permission denied, ENOSPC, and other ``OSError`` subclasses
+        propagate so a real I/O problem is not hidden.
         """
         db_file = self._db_file()
         if db_file:
@@ -316,8 +316,7 @@ class SQLiteGate:
                 wait_elapsed = time.perf_counter() - wait_start
                 # Order matters: set the flag BEFORE dec() so a failure inside
                 # dec() (e.g. a Prometheus client internal error) does not let
-                # the outer ``finally`` double-decrement.  Round-2 reviewer
-                # silent-failure-hunter caught this off-by-one.
+                # the outer ``finally`` double-decrement.
                 queue_decremented = True
                 _queue_depth_gauge.dec()
                 _lock_wait_hist.labels(component=self._component, op=op).observe(wait_elapsed)
@@ -351,7 +350,7 @@ class SQLiteGate:
                     hold_elapsed = time.perf_counter() - hold_start
                     _lock_hold_hist.labels(component=self._component, op=op).observe(hold_elapsed)
         finally:
-            # US-005: queue depth gauge MUST decrement on every path including
+            # Queue depth gauge MUST decrement on every path including
             # pre-lock failures (e.g. a faulty Lock subclass raising on
             # __enter__).  Without this, the gauge over-counts permanently.
             if not queue_decremented:
@@ -402,9 +401,9 @@ class SQLiteGate:
                         cur.execute("PRAGMA wal_checkpoint(PASSIVE)")
                         cur.close()
                 except Exception as exc:  # noqa: BLE001 — daemon must survive
-                    # US-005: bump Prometheus counter so persistent checkpoint
-                    # failures (disk full, closed conn) are alertable.  The
-                    # WARNING log alone produces noise without a metric signal.
+                    # Bump Prometheus counter so persistent checkpoint failures
+                    # (disk full, closed conn) are alertable.  The WARNING log
+                    # alone produces noise without a metric signal.
                     try:
                         _errors_counter.labels(
                             code="checkpoint_failed",

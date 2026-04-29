@@ -127,10 +127,10 @@ class DualReadRouter:
         cid = correlation_id if correlation_id is not None else str(uuid.uuid4())
 
         # ------------------------------------------------------------------
-        # Wiring-trap guard (US-003): if a route handler forgot to pass the
-        # middleware snapshot AND the breaker is tripped, the env-fallback
-        # path silently ignores the breaker.  Surface the gap as a WARNING
-        # so it shows up in production logs and operators can fix the wire.
+        # Wiring-trap guard: if a route handler forgot to pass the middleware
+        # snapshot AND the breaker is tripped, the env-fallback path silently
+        # ignores the breaker.  Surface the gap as a WARNING so it shows up
+        # in production logs and operators can fix the wire.
         # ------------------------------------------------------------------
         if dual_read_override is None:
             try:
