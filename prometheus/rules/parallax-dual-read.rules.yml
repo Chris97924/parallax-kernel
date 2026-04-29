@@ -3,15 +3,21 @@ groups:
     interval: 30s
     rules:
       - alert: CrosswalkMissRateHigh
+        # Aggregated with sum() on both sides because miss_orphan_total carries
+        # labels [user_id] while outcomes_total carries [user_id, outcome].
+        # Without aggregation, PromQL drops series due to label-set mismatch
+        # and the expression evaluates to no-data — the alert would never fire.
+        # Global (tenant-wide) miss-rate is the correct semantic for this 5%
+        # threshold; no per-user breakdown is needed for the alert.
         # Denominator guarded with `> 0` so the alert silently no-ops during
         # zero-traffic windows (DUAL_READ=false pre-flip / post-rollback)
         # instead of producing NaN. NaN comparison semantics differ across
         # Prometheus versions, so the explicit guard is safer than relying on
         # default behavior.
         expr: |
-          (rate(parallax_crosswalk_miss_orphan_total[5m])
+          (sum(rate(parallax_crosswalk_miss_orphan_total[5m]))
            /
-           (rate(parallax_dual_read_outcomes_total[5m]) > 0)) > 0.05
+           (sum(rate(parallax_dual_read_outcomes_total[5m])) > 0)) > 0.05
         for: 30m
         labels:
           severity: warning
