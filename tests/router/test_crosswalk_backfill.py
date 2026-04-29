@@ -342,9 +342,9 @@ def test_backfill_streams_rows_no_fetchall(conn: sqlite3.Connection) -> None:
     tracking_conn = _FetchallTrackingConnection(conn)
     stats = backfill_crosswalk(tracking_conn, user_id=_USER, batch_limit=5)  # type: ignore[arg-type]
 
-    assert tracking_conn.fetchall_called_for == [], (
-        f"fetchall was called on source SELECT(s): {tracking_conn.fetchall_called_for}"
-    )
+    assert (
+        tracking_conn.fetchall_called_for == []
+    ), f"fetchall was called on source SELECT(s): {tracking_conn.fetchall_called_for}"
     assert stats.rows_examined == 5
     assert stats.batch_limit_reached is True
 
