@@ -1,0 +1,74 @@
+groups:
+  - name: parallax_dual_read
+    interval: 30s
+    rules:
+      - alert: CrosswalkMissRateHigh
+        # Denominator guarded with `> 0` so the alert silently no-ops during
+        # zero-traffic windows (DUAL_READ=false pre-flip / post-rollback)
+        # instead of producing NaN. NaN comparison semantics differ across
+        # Prometheus versions, so the explicit guard is safer than relying on
+        # default behavior.
+        expr: |
+          (rate(parallax_crosswalk_miss_orphan_total[5m])
+           /
+           (rate(parallax_dual_read_outcomes_total[5m]) > 0)) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+          component: parallax_dual_read
+        annotations:
+          summary: Crosswalk miss rate above 5% for 30min
+          description: |
+            crosswalk_miss_rate has exceeded 5% for over 30 minutes.
+            See runbook docs/lane-c/m3-dual-read-runbook.md §Failure-Modes.
+            48h SLO observation window must restart if this fires during pre-flip phase.
+
+      - alert: AphelionUnreachableRateHigh
+        expr: parallax_aphelion_unreachable_rate > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          component: parallax_dual_read
+        annotations:
+          summary: Aphelion unreachable rate above 1% for 5min — circuit breaker imminent
+          description: |
+            Sustained aphelion_unreachable_rate above 1% for 5 minutes triggers
+            the circuit breaker. New dual-read requests will fall back to canonical-only.
+            Manual re-arm via POST /admin/circuit_breaker/reset after Aphelion recovers.
+
+      - alert: CircuitBreakerTripped
+        expr: increase(parallax_circuit_breaker_tripped_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: parallax_dual_read
+        annotations:
+          summary: Dual-read circuit breaker tripped
+          description: |
+            The dual-read circuit breaker has tripped within the last 10 minutes.
+            Investigate Aphelion availability and run POST /admin/circuit_breaker/reset
+            once the underlying issue is resolved.
+
+      - alert: DrainTimeoutDetected
+        expr: increase(parallax_drain_timeout_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: parallax_dual_read
+        annotations:
+          summary: Graceful drain timeout occurred
+          description: |
+            Lifespan drain handler hit the 15-minute timeout — in-flight requests
+            were force-cut. Investigate stuck connections or upstream blocks.
+
+      - alert: DualReadDiscrepancyRateHigh
+        expr: parallax_dual_read_discrepancy_rate > 0.001
+        for: 30m
+        labels:
+          severity: warning
+          component: parallax_dual_read
+        annotations:
+          summary: Dual-read discrepancy rate above 0.1% for 30min
+          description: |
+            Dual-read discrepancy rate exceeded the 0.1% DoD threshold for 30 minutes.
+            If sustained 60min consider rolling back DUAL_READ=false.

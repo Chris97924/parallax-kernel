@@ -24,6 +24,7 @@ __all__ = [
     "HealthReport",
     "ArbitrationDecision",
     "RetrievalEvidence",
+    "DualReadResult",
 ]
 
 
@@ -155,3 +156,38 @@ class HealthReport:
     query_type_count: int
     ports_registered: tuple[str, ...]
     crosswalk_seed_hash: str
+
+
+# ---------------------------------------------------------------------------
+# M3-T1.2 — DualReadResult (US-011)
+# ---------------------------------------------------------------------------
+
+# Five outcome labels mirroring DualReadOutcome from discrepancy_live.py.
+# Defined here as a plain Literal to avoid a circular import with discrepancy_live.
+_DualReadOutcome = Literal["match", "diverge", "primary_only", "aphelion_unreachable", "skipped"]
+
+
+@dataclass(frozen=True)
+class DualReadResult:
+    """Result of a dual-read query dispatched by DualReadRouter (M3-T1.2).
+
+    ``primary`` is always set — DualReadRouter is fail-closed to the canonical
+    result on every failure path.  ``secondary`` is None when the Aphelion side
+    was not called (``outcome="skipped"``) or when it failed
+    (``outcome="aphelion_unreachable"`` / ``outcome="primary_only"``).
+
+    outcome values:
+      - ``"match"``              — both sides returned; hits equal under _hits_equal.
+      - ``"diverge"``            — both sides returned; hits differ.
+      - ``"primary_only"``       — secondary raised an unexpected exception.
+      - ``"aphelion_unreachable"`` — secondary raised AphelionUnreachableError or timed out.
+      - ``"skipped"``            — flag off OR Q5 CHANGE_TRACE.legacy_kind=bug.
+    """
+
+    outcome: _DualReadOutcome
+    primary: RetrievalEvidence
+    secondary: RetrievalEvidence | None
+    correlation_id: str
+    latency_primary_ms: float
+    latency_secondary_ms: float | None
+    aphelion_unreachable_reason: str | None
