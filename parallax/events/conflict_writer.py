@@ -43,6 +43,8 @@ __all__ = [
     "WriteFailure",
     "write_conflict_event",
     "get_dedup_hit_count",
+    "get_write_failure_count",
+    "reset_write_failure_count",
 ]
 
 _log = get_logger("parallax.events.conflict_writer")
@@ -66,11 +68,28 @@ class WriteFailure(Exception):
 # ---------------------------------------------------------------------------
 
 _dedup_hits: dict[str, int] = {"count": 0}
+_write_failures: dict[str, int] = {"count": 0}
 
 
 def get_dedup_hit_count() -> int:
     """Return the number of dedup hits observed so far in this process."""
     return _dedup_hits["count"]
+
+
+def get_write_failure_count() -> int:
+    """Return the number of write_conflict_event failures observed so far.
+
+    H4 — every caught exception in :func:`write_conflict_event` (dedup
+    SELECT, INSERT, payload encoding, ...) increments this counter
+    BEFORE returning the empty string.  Telemetry surfaces (Story
+    JSONL-PRODUCER) read this to compute write_error_rate.
+    """
+    return _write_failures["count"]
+
+
+def reset_write_failure_count() -> None:
+    """Reset the write-failure counter to zero. Test-only."""
+    _write_failures["count"] = 0
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +366,10 @@ def write_conflict_event(
         )
         return event_id
     except Exception as exc:  # noqa: BLE001 — fail-closed: never crash the request
+        # H4 — increment write-failure counter BEFORE returning '' so
+        # telemetry hooks reading get_write_failure_count() see every
+        # failure regardless of which downstream step blew up.
+        _write_failures["count"] += 1
         try:
             _log.warning(
                 "conflict_writer_failed",

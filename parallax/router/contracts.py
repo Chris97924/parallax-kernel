@@ -198,3 +198,8 @@ class DualReadResult:
     # invoked (e.g. pre-M3b call sites, or skipped/aphelion_unreachable
     # paths where there is no secondary to weigh against).
     arbitration: LiveArbitrationDecision | None = None
+    # M3b post-review H4: True iff arbitration required manual review AND
+    # the conflict_event_id came back '' (writer caught an exception).
+    # Surfaces the write-failure path on the JSONL decision log so
+    # ``write_error_rate`` is computable from a single record stream.
+    write_error_observed: bool = False

@@ -96,6 +96,8 @@ def test_fields() -> None:
     names = [f.name for f in dataclasses.fields(DualReadResult)]
     # ``arbitration`` is the M3b Phase 2 additive field (US-004-M3-T2.1) and
     # has a default of ``None`` so existing call sites stay backward compatible.
+    # ``write_error_observed`` (M3b post-review H4) is also additive: defaults
+    # to False so legacy callers that build DualReadResult by hand still pass.
     assert names == [
         "outcome",
         "primary",
@@ -105,6 +107,7 @@ def test_fields() -> None:
         "latency_secondary_ms",
         "aphelion_unreachable_reason",
         "arbitration",
+        "write_error_observed",
     ]
 
 

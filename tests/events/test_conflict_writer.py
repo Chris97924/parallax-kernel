@@ -318,6 +318,64 @@ def test_write_failure_class_is_exposed() -> None:
 
 
 # ---------------------------------------------------------------------------
+# H4 — write-failure counter (separate from dedup hit counter)
+# ---------------------------------------------------------------------------
+
+
+def test_write_failure_increments_counter(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story H4 — when _insert_event_row raises, the write-failure counter
+    must increment from 0 to 1 BEFORE write_conflict_event returns ''."""
+    from parallax.events import conflict_writer as cw_mod
+
+    cw_mod.reset_write_failure_count()
+    assert cw_mod.get_write_failure_count() == 0
+
+    def _boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("simulated write failure")
+
+    monkeypatch.setattr(cw_mod, "_insert_event_row", _boom)
+    eid = write_conflict_event(_decision(correlation_id="cid-h4-w"), _payload(), conn)
+    assert eid == ""
+    assert cw_mod.get_write_failure_count() == 1
+
+
+def test_select_failure_increments_counter(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story H4 — failures inside the dedup SELECT must also increment the
+    write-failure counter (any caught exception increments)."""
+    from parallax.events import conflict_writer as cw_mod
+
+    cw_mod.reset_write_failure_count()
+
+    def _boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("simulated select failure")
+
+    monkeypatch.setattr(cw_mod, "_select_existing_event_id", _boom)
+    eid = write_conflict_event(_decision(correlation_id="cid-h4-s"), _payload(), conn)
+    assert eid == ""
+    assert cw_mod.get_write_failure_count() == 1
+
+
+def test_reset_write_failure_count_zeroes(
+    conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story H4 — reset_write_failure_count returns the counter to zero."""
+    from parallax.events import conflict_writer as cw_mod
+
+    def _boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("simulated write failure")
+
+    monkeypatch.setattr(cw_mod, "_insert_event_row", _boom)
+    write_conflict_event(_decision(correlation_id="cid-h4-r"), _payload(), conn)
+    assert cw_mod.get_write_failure_count() >= 1
+    cw_mod.reset_write_failure_count()
+    assert cw_mod.get_write_failure_count() == 0
+
+
+# ---------------------------------------------------------------------------
 # Migration idempotency (C)
 # ---------------------------------------------------------------------------
 

@@ -295,6 +295,7 @@ class DualReadRouter:
         # ``events_conn`` having been passed at construction time so
         # call sites that opt out (or unit tests) skip the write
         # entirely with no overhead.
+        write_error_observed = False
         if arbitration.requires_manual_review and self._events_conn is not None:
             try:
                 from parallax.events.conflict_writer import write_conflict_event
@@ -307,12 +308,18 @@ class DualReadRouter:
                 event_id = write_conflict_event(arbitration, payload_for_writer, self._events_conn)
                 if event_id:
                     arbitration = dataclasses.replace(arbitration, conflict_event_id=event_id)
+                else:
+                    # H4 — empty event_id signals the writer caught an
+                    # exception. Surface that on the DualReadResult so the
+                    # JSONL decision log records the write-error path.
+                    write_error_observed = True
             except Exception as exc:  # noqa: BLE001 — fail-closed
                 _safe_log_warning(
                     "conflict_event_write_failed",
                     exc_class=type(exc).__name__,
                     exc_str=str(exc),
                 )
+                write_error_observed = True
 
         result = DualReadResult(
             outcome=outcome,
@@ -323,6 +330,7 @@ class DualReadRouter:
             latency_secondary_ms=latency_secondary_ms,
             aphelion_unreachable_reason=unreachable_reason,
             arbitration=arbitration,
+            write_error_observed=write_error_observed,
         )
 
         self._record(request.user_id, outcome)
