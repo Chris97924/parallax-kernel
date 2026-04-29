@@ -125,13 +125,11 @@ def backfill_crosswalk(
     source_breakdown: dict[str, int] = {"memory": 0, "claim": 0}
 
     # --- Memories ---
-    memory_rows = conn.execute(
+    for row in conn.execute(
         "SELECT memory_id, content_hash, source_id FROM memories WHERE user_id = ?"
         " ORDER BY created_at ASC, memory_id ASC",
         (user_id,),
-    ).fetchall()
-
-    for row in memory_rows:
+    ):
         if rows_examined >= limit:
             return BackfillStats(
                 rows_examined=rows_examined,
@@ -141,7 +139,7 @@ def backfill_crosswalk(
                 source_breakdown=source_breakdown,
             )
         canonical_ref = f"memory:{row[0]}"
-        cursor = conn.execute(
+        insert_cur = conn.execute(
             """
             INSERT OR IGNORE INTO crosswalk (
                 user_id, canonical_ref, parallax_target_kind, parallax_target_id,
@@ -168,20 +166,18 @@ def backfill_crosswalk(
             ),
         )
         rows_examined += 1
-        if cursor.rowcount > 0:
+        if insert_cur.rowcount > 0:
             rows_inserted += 1
             source_breakdown["memory"] += 1
         else:
             rows_skipped += 1
 
     # --- Claims ---
-    claim_rows = conn.execute(
+    for row in conn.execute(
         "SELECT claim_id, content_hash, source_id FROM claims WHERE user_id = ?"
         " ORDER BY created_at ASC, claim_id ASC",
         (user_id,),
-    ).fetchall()
-
-    for row in claim_rows:
+    ):
         if rows_examined >= limit:
             return BackfillStats(
                 rows_examined=rows_examined,
@@ -191,7 +187,7 @@ def backfill_crosswalk(
                 source_breakdown=source_breakdown,
             )
         canonical_ref = f"claim:{row[0]}"
-        cursor = conn.execute(
+        insert_cur = conn.execute(
             """
             INSERT OR IGNORE INTO crosswalk (
                 user_id, canonical_ref, parallax_target_kind, parallax_target_id,
@@ -218,7 +214,7 @@ def backfill_crosswalk(
             ),
         )
         rows_examined += 1
-        if cursor.rowcount > 0:
+        if insert_cur.rowcount > 0:
             rows_inserted += 1
             source_breakdown["claim"] += 1
         else:

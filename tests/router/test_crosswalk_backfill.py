@@ -291,6 +291,65 @@ def _get_orphan_counter_value(user_id: str) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Streaming regression: fetchall must NOT be called for memories/claims SELECTs
+# ---------------------------------------------------------------------------
+
+
+class _FetchallTrackingConnection:
+    """Thin wrapper around sqlite3.Connection that tracks fetchall calls on
+    source SELECT cursors (memories/claims). Used only for streaming regression."""
+
+    def __init__(self, inner: sqlite3.Connection) -> None:
+        self._inner = inner
+        self.fetchall_called_for: list[str] = []
+
+    def execute(self, sql: str, params=()):
+        cursor = self._inner.execute(sql, params)
+        if "FROM memories WHERE user_id" in sql or "FROM claims WHERE user_id" in sql:
+            tracker = self
+            sql_snippet = sql.strip()[:60]
+            orig_fetchall = cursor.fetchall
+
+            class _WrappedCursor:
+                def fetchall(self_):  # noqa: N805
+                    tracker.fetchall_called_for.append(sql_snippet)
+                    return orig_fetchall()
+
+                def __iter__(self_):  # noqa: N805
+                    return iter(cursor)
+
+                def __getattr__(self_, name: str):  # noqa: N805
+                    return getattr(cursor, name)
+
+            return _WrappedCursor()
+        return cursor
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+
+def test_backfill_streams_rows_no_fetchall(conn: sqlite3.Connection) -> None:
+    """Regression: backfill must iterate cursor rows without calling fetchall().
+
+    Inserts 50 memories + 50 claims but sets batch_limit=5.
+    The tracking connection wraps the memories/claims cursors and records any
+    fetchall() invocation. After backfill_crosswalk returns, asserts no
+    fetchall was called, rows_examined==5, batch_limit_reached==True.
+    """
+    _add_memories(conn, _USER, 50)
+    _add_claims(conn, _USER, 50)
+
+    tracking_conn = _FetchallTrackingConnection(conn)
+    stats = backfill_crosswalk(tracking_conn, user_id=_USER, batch_limit=5)  # type: ignore[arg-type]
+
+    assert tracking_conn.fetchall_called_for == [], (
+        f"fetchall was called on source SELECT(s): {tracking_conn.fetchall_called_for}"
+    )
+    assert stats.rows_examined == 5
+    assert stats.batch_limit_reached is True
+
+
+# ---------------------------------------------------------------------------
 # Backfill must refuse a connection that is wrapped by a live SQLiteGate
 # ---------------------------------------------------------------------------
 
