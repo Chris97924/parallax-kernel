@@ -340,6 +340,52 @@ def test_load_records_returns_dir_missing_false_when_dir_exists(tmp_path: Path) 
     assert result.malformed == 0
 
 
+def test_compute_all_rates_returns_zeroes_on_empty_records() -> None:
+    """MED-LOWS-BUNDLED — compute_all_rates handles empty record list."""
+    from parallax.router import dual_read_metrics as m
+
+    result = m.compute_all_rates([])
+    assert result["discrepancy_rate"] == 0.0
+    assert result["arbitration_conflict_rate"] == 0.0
+    assert result["write_error_rate"] == 0.0
+    assert result["aphelion_unreachable_rate"] == 0.0
+    assert result["crosswalk_miss_rate"] == 0.0
+    assert result["circuit_open_count"] == 0
+
+
+def test_compute_all_rates_counts_winning_source_tie_and_fallback() -> None:
+    """MED-LOWS-BUNDLED — winning_source ∈ {tie, fallback} → conflict.
+
+    Also covers the conflict_event_id branch (non-tie/fallback record with
+    a populated conflict_event_id is still a conflict).
+    """
+    import pytest as _pytest
+
+    from parallax.router import dual_read_metrics as m
+
+    records = [
+        {
+            "outcome": "dual_attempted",
+            "winning_source": "tie",
+            "data_quality_flag": "normal",
+        },
+        {
+            "outcome": "dual_attempted",
+            "winning_source": "parallax",
+            "conflict_event_id": "ev-x",
+            "data_quality_flag": "normal",
+        },
+        {
+            "outcome": "match",
+            "winning_source": "parallax",
+            "data_quality_flag": "normal",
+        },
+    ]
+    result = m.compute_all_rates(records)
+    # 2 conflicts / 3 denom = 0.6666...
+    assert result["arbitration_conflict_rate"] == _pytest.approx(2 / 3)
+
+
 def test_load_records_counts_malformed(tmp_path: Path) -> None:
     """MED-MALFORMED-COUNTER — 3 valid + 2 corrupt → malformed=2, records=3."""
     from parallax.router import dual_read_metrics as m
