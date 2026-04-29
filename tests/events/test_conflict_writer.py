@@ -247,6 +247,58 @@ def test_idempotency_different_conflict_field_inserts_separate_rows(
     assert _row_count(conn, event_type="arbitration_conflict") == 2
 
 
+def test_dedup_at_window_boundary(conn: sqlite3.Connection) -> None:
+    """TEST-GAP-DEDUP-BOUNDARY — exact ``-1 µs`` from the boundary still dedups.
+
+    Second call exactly DEDUP_WINDOW_SECONDS*1_000_000 - 1 µs after the
+    first must return the same event_id (still in window).
+    """
+    from parallax.events.conflict_writer import DEDUP_WINDOW_SECONDS
+
+    payload = _payload(primary_ids=("P-EDGE",))
+    base_us = 1_700_000_000_000_000  # arbitrary fixed clock
+
+    eid_1 = write_conflict_event(
+        _decision(correlation_id="cid-edge-1"),
+        payload,
+        conn,
+        now_us_utc=base_us,
+    )
+    # Just inside the window.
+    inside_us = base_us + DEDUP_WINDOW_SECONDS * 1_000_000 - 1
+    eid_2 = write_conflict_event(
+        _decision(correlation_id="cid-edge-2"),
+        payload,
+        conn,
+        now_us_utc=inside_us,
+    )
+    assert eid_1 == eid_2, "calls within the dedup window must collapse to one row"
+
+
+def test_dedup_just_outside_window(conn: sqlite3.Connection) -> None:
+    """TEST-GAP-DEDUP-BOUNDARY — exact ``+1 µs`` past the boundary inserts."""
+    from parallax.events.conflict_writer import DEDUP_WINDOW_SECONDS
+
+    payload = _payload(primary_ids=("P-OUTSIDE",))
+    base_us = 1_700_000_000_000_000
+
+    eid_1 = write_conflict_event(
+        _decision(correlation_id="cid-out-1"),
+        payload,
+        conn,
+        now_us_utc=base_us,
+    )
+    # Just outside the window.
+    outside_us = base_us + DEDUP_WINDOW_SECONDS * 1_000_000 + 1
+    eid_2 = write_conflict_event(
+        _decision(correlation_id="cid-out-2"),
+        payload,
+        conn,
+        now_us_utc=outside_us,
+    )
+    assert eid_1 != eid_2, "calls past the dedup window must produce a new row"
+
+
 def test_idempotency_outside_1h_window_inserts_new_row(conn: sqlite3.Connection) -> None:
     """Two calls > 1h apart → 2 separate rows.
 

@@ -577,3 +577,41 @@ def test_cli_reports_malformed_count(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["total_records"] == 3
     assert payload["malformed"] == 2
+
+
+# ---------------------------------------------------------------------------
+# TEST-GAP-CONFLICT-RATE-BREACH — independent breach test for arbitration_conflict_rate
+# ---------------------------------------------------------------------------
+
+
+def test_arbitration_conflict_rate_breach_subprocess(tmp_path: Path) -> None:
+    """TEST-GAP-CONFLICT-RATE-BREACH — >1% tie/fallback → exit 1 + breach.
+
+    Synthesize a JSONL stream where >1% of dual-attempted entries have
+    ``winning_source='tie' / 'fallback'``; run the CLI subprocess at default
+    thresholds; assert exit 1 + 'arbitration_conflict_rate' in failures.
+    """
+    # 95 clean parallax wins + 5 ties → 5% conflict rate >> 1% threshold.
+    records = []
+    for _ in range(95):
+        rec = _record(outcome="match", timestamp="2026-04-26T11:30:00.000000+00:00")
+        rec["winning_source"] = "parallax"
+        records.append(rec)
+    for _ in range(5):
+        rec = _record(
+            outcome="dual_attempted",
+            timestamp="2026-04-26T11:30:00.000000+00:00",
+        )
+        rec["winning_source"] = "tie"
+        records.append(rec)
+    _write(tmp_path, records)
+    result = _run(
+        "--since=72h",
+        f"--log-dir={tmp_path}",
+        "--min-records=1",
+        "--format=json",
+        "--now=2026-04-26T12:00:00+00:00",
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert "arbitration_conflict_rate" in payload["failures"]
