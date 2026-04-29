@@ -314,8 +314,12 @@ class SQLiteGate:
         try:
             with self._lock:
                 wait_elapsed = time.perf_counter() - wait_start
-                _queue_depth_gauge.dec()
+                # Order matters: set the flag BEFORE dec() so a failure inside
+                # dec() (e.g. a Prometheus client internal error) does not let
+                # the outer ``finally`` double-decrement.  Round-2 reviewer
+                # silent-failure-hunter caught this off-by-one.
                 queue_decremented = True
+                _queue_depth_gauge.dec()
                 _lock_wait_hist.labels(component=self._component, op=op).observe(wait_elapsed)
 
                 hold_start = time.perf_counter()

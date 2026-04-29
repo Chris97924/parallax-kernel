@@ -47,14 +47,20 @@ async def reset_circuit_breaker() -> dict:
     state = get_breaker_state()
     was_tripped = state.is_tripped()
     reset_at = datetime.now(UTC).isoformat()
-    _log.warning(
-        "circuit_breaker.reset.invoked",
-        extra={
-            "event": "circuit_breaker.reset.invoked",
-            "was_tripped": was_tripped,
-            "reset_at": reset_at,
-        },
-    )
+    # Audit BEFORE the action so the operator's intent is recorded even if
+    # ``state.reset()`` raises.  The log call itself is wrapped so a closed
+    # logger handler cannot silently block the reset.
+    try:
+        _log.warning(
+            "circuit_breaker.reset.invoked",
+            extra={
+                "event": "circuit_breaker.reset.invoked",
+                "was_tripped": was_tripped,
+                "reset_at": reset_at,
+            },
+        )
+    except Exception:  # noqa: BLE001 — last-resort: never block reset on logger failure
+        pass
     state.reset()
     return {
         "ok": True,

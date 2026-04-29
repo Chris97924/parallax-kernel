@@ -50,6 +50,21 @@ __all__ = ["DualReadRouter"]
 _log = get_logger("parallax.router.dual_read")
 
 
+def _safe_log_warning(event: str, **extras: object) -> None:
+    """Emit a structured WARNING that never propagates a logger exception.
+
+    The fail-closed invariant requires observability code to never crash
+    the request path.  ``_log.warning`` itself can raise if the logger
+    handler is closed or misconfigured (rare but possible during process
+    shutdown), so every call site through this module routes through
+    here so the request path is fully insulated.
+    """
+    try:
+        _log.warning(event, extra={"event": event, **extras})
+    except Exception:  # noqa: BLE001 — last-resort: even the logger may be broken
+        pass
+
+
 class DualReadRouter:
     """Flag-gated dual-read wrapper. Fail-closed to canonical on any failure.
 
@@ -120,15 +135,19 @@ class DualReadRouter:
         if dual_read_override is None:
             try:
                 breaker_tripped = get_breaker_state().is_tripped()
-            except Exception:  # noqa: BLE001 — observability never crashes the request
+            except Exception as exc:  # noqa: BLE001 — observability never crashes the request
+                # Surface the swallowed exception so an operator can tell
+                # "breaker fine" apart from "breaker check exploded".
+                _safe_log_warning(
+                    "breaker_is_tripped_check_failed",
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
+                )
                 breaker_tripped = False
             if breaker_tripped:
-                _log.warning(
+                _safe_log_warning(
                     "dual_read_override_missing_with_tripped_breaker",
-                    extra={
-                        "event": "dual_read_override_missing_with_tripped_breaker",
-                        "user_id": request.user_id,
-                    },
+                    user_id=request.user_id,
                 )
 
         # ------------------------------------------------------------------
@@ -221,13 +240,10 @@ class DualReadRouter:
                 try:
                     hits_equal = _hits_equal(primary_result, secondary_result)  # type: ignore[arg-type]
                 except (AttributeError, TypeError) as cmp_exc:
-                    _log.warning(
+                    _safe_log_warning(
                         "secondary_hits_equal_failed",
-                        extra={
-                            "event": "secondary_hits_equal_failed",
-                            "exc_class": type(cmp_exc).__name__,
-                            "exc_str": str(cmp_exc),
-                        },
+                        exc_class=type(cmp_exc).__name__,
+                        exc_str=str(cmp_exc),
                     )
                     outcome = "primary_only"
                     secondary_result = None
@@ -239,13 +255,10 @@ class DualReadRouter:
             else:
                 # Unexpected exception — logic bug, not infra unavailability.
                 # Log only class name + str, NO stack trace (avoids PII in logs).
-                _log.warning(
+                _safe_log_warning(
                     "secondary_unexpected_exception",
-                    extra={
-                        "event": "secondary_unexpected_exception",
-                        "exc_class": type(exc).__name__,
-                        "exc_str": str(exc),
-                    },
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
                 )
                 outcome = "primary_only"
                 secondary_result = None
@@ -279,25 +292,19 @@ class DualReadRouter:
         try:
             record_dual_read_outcome(user_id=user_id, outcome=outcome)
         except Exception as exc:  # noqa: BLE001 — observability must not crash query path
-            _log.warning(
+            _safe_log_warning(
                 "record_dual_read_outcome_failed",
-                extra={
-                    "event": "record_dual_read_outcome_failed",
-                    "exc_class": type(exc).__name__,
-                    "exc_str": str(exc),
-                },
+                exc_class=type(exc).__name__,
+                exc_str=str(exc),
             )
         if self._live_counter is not None:
             try:
                 self._live_counter.record(user_id=user_id, outcome=outcome)
             except Exception as exc:  # noqa: BLE001 — same rationale as above
-                _log.warning(
+                _safe_log_warning(
                     "live_counter_record_failed",
-                    extra={
-                        "event": "live_counter_record_failed",
-                        "exc_class": type(exc).__name__,
-                        "exc_str": str(exc),
-                    },
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
                 )
         # T1.5: feed the rolling-window circuit breaker. Only count outcomes
         # where the secondary was actually attempted (not "skipped").
@@ -307,11 +314,8 @@ class DualReadRouter:
                     observed_unreachable=(outcome == "aphelion_unreachable")
                 )
             except Exception as exc:  # noqa: BLE001 — same rationale as above
-                _log.warning(
+                _safe_log_warning(
                     "breaker_record_failed",
-                    extra={
-                        "event": "breaker_record_failed",
-                        "exc_class": type(exc).__name__,
-                        "exc_str": str(exc),
-                    },
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
                 )
