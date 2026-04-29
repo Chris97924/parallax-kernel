@@ -261,6 +261,12 @@ def write_conflict_event(
     DualReadRouter requires this so observability code can never break
     the canonical query path (US-001-HIGH1 fail-closed invariant).
 
+    Sets ``conn.row_factory`` to ``sqlite3.Row`` to ensure the dedup
+    SELECT can use Mapping access (``row["payload_json"]``). The
+    caller's original ``row_factory`` is preserved by saving + restoring
+    it on exit (try/finally), so call sites that rely on a custom
+    factory for other queries are not affected.
+
     Parameters
     ----------
     decision:
@@ -288,6 +294,16 @@ def write_conflict_event(
         The event_id of the row (newly inserted or existing dedup hit).
         Empty string when the write failed.
     """
+    # H2 — save caller's row_factory; force sqlite3.Row for the duration of
+    # this call so the dedup SELECT can do Mapping access; restore on exit.
+    saved_row_factory = conn.row_factory
+    try:
+        conn.row_factory = sqlite3.Row
+    except Exception:  # noqa: BLE001 — fail-closed: never crash the request
+        # In the rare case the conn rejects the assignment (closed conn,
+        # platform-specific quirk), fall through to the writer body — the
+        # outer try/except will swallow any downstream failure.
+        pass
     try:
         ts_us = now_us_utc if now_us_utc is not None else time.time_ns() // 1_000
         canonical_ref = _derive_canonical_ref(payload)
@@ -344,3 +360,11 @@ def write_conflict_event(
         except Exception:  # noqa: BLE001 — last-resort: even logger may be broken
             pass
         return ""
+    finally:
+        # H2 — restore caller's original row_factory.  Best-effort: a
+        # closed conn (or platform-specific quirk) may reject the
+        # assignment, which is fine — we still preserved data integrity.
+        try:
+            conn.row_factory = saved_row_factory
+        except Exception:  # noqa: BLE001 — last-resort: never crash the request
+            pass

@@ -397,6 +397,51 @@ def test_dedup_select_uses_index(conn: sqlite3.Connection) -> None:
     ), f"Expected dedup SELECT to use an index. Got plan:\n{plan_text}"
 
 
+def test_write_conflict_event_works_with_default_row_factory(tmp_path: pathlib.Path) -> None:
+    """Story H2 — vanilla sqlite3.connect (no row_factory) must still work.
+
+    The dedup SELECT uses Mapping access (``row["payload_json"]``); the
+    writer must self-set ``conn.row_factory = sqlite3.Row`` so callers
+    that pass a vanilla connection don't trip TypeError on tuple indexing.
+    """
+    db = tmp_path / "default_factory.db"
+    raw = sqlite3.connect(str(db))
+    # Make sure factory is the default (None)
+    raw.row_factory = None
+    migrate_to_latest(raw)
+
+    try:
+        # First call — inserts a row through the dedup-then-insert path.
+        eid_1 = write_conflict_event(_decision(correlation_id="cid-rf-1"), _payload(), raw)
+        assert eid_1 != ""
+        # Second call within 1h window — must hit the dedup SELECT
+        # (Mapping access on the row); without row_factory enforcement this
+        # would TypeError and the writer would swallow it and return "".
+        eid_2 = write_conflict_event(_decision(correlation_id="cid-rf-2"), _payload(), raw)
+        assert eid_1 == eid_2, "dedup SELECT must succeed even with default row_factory"
+    finally:
+        raw.close()
+
+
+def test_caller_row_factory_preserved(tmp_path: pathlib.Path) -> None:
+    """Story H2 — the writer must restore the caller's row_factory on exit."""
+    db = tmp_path / "preserve_factory.db"
+    raw = sqlite3.connect(str(db))
+    migrate_to_latest(raw)
+
+    def custom_factory(cursor, row):  # type: ignore[no-untyped-def]
+        return list(row)  # distinct from sqlite3.Row + tuple
+
+    raw.row_factory = custom_factory
+    try:
+        write_conflict_event(_decision(correlation_id="cid-rf-pres"), _payload(), raw)
+        assert (
+            raw.row_factory is custom_factory
+        ), "caller's row_factory must be restored after write_conflict_event"
+    finally:
+        raw.close()
+
+
 def test_dedup_select_filters_by_created_at_in_sql(conn: sqlite3.Connection) -> None:
     """The dedup window check must filter created_at in the SQL WHERE clause.
 
