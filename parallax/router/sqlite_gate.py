@@ -113,14 +113,39 @@ class SQLiteGateMetrics:
 
 
 class _Cancellable:
-    """Object returned by ``start_background_checkpoint``; caller calls ``.stop()``."""
+    """Object returned by ``start_background_checkpoint``; caller calls ``.stop()``.
 
-    def __init__(self, event: threading.Event) -> None:
+    ``stop()`` is fail-safe: it sets ``_stop_event`` and (if a thread reference
+    was provided at construction) joins the daemon thread before returning so
+    the caller can safely close the underlying ``sqlite3.Connection`` without
+    racing the background checkpoint thread (which would SIGSEGV in C if the
+    cursor tries to ``execute()`` against a closed connection).
+    """
+
+    # Default cap on how long stop() will wait for the daemon thread to exit
+    # before returning anyway. 5s is generous vs. the typical 0.05–300s loop.
+    _DEFAULT_JOIN_TIMEOUT_SECONDS = 5.0
+
+    def __init__(
+        self,
+        event: threading.Event,
+        thread: threading.Thread | None = None,
+    ) -> None:
         self._stop_event = event
+        self._thread = thread
 
-    def stop(self) -> None:
-        """Signal the background checkpoint thread to exit."""
+    def stop(self, *, join_timeout: float | None = None) -> None:
+        """Signal the background checkpoint thread to exit and join it.
+
+        Pass ``join_timeout=0`` to skip the join (legacy non-blocking
+        behaviour); ``None`` uses the default 5 s cap.
+        """
         self._stop_event.set()
+        if self._thread is None:
+            return
+        timeout = self._DEFAULT_JOIN_TIMEOUT_SECONDS if join_timeout is None else join_timeout
+        if timeout > 0:
+            self._thread.join(timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -333,4 +358,4 @@ class SQLiteGate:
 
         t = threading.Thread(target=_run, daemon=True, name="sqlite-gate-checkpoint")
         t.start()
-        return _Cancellable(stop_event)
+        return _Cancellable(stop_event, thread=t)

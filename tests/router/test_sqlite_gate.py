@@ -396,7 +396,7 @@ def test_background_checkpoint_runs(file_conn):
             t.start()
             from parallax.router.sqlite_gate import _Cancellable
 
-            return _Cancellable(stop_event)
+            return _Cancellable(stop_event, thread=t)
 
     tracking_gate = TrackingGate(file_conn, component="m3_dual_read")
     cancellable = tracking_gate.start_background_checkpoint(interval_seconds=0.05)
