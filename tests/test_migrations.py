@@ -398,3 +398,48 @@ class TestClaimMetadataV5Fix02:
         self._seed_claim(empty_conn, "c1")
         with pytest.raises(sqlite3.IntegrityError):
             self._insert_metadata(empty_conn, claim_id="c1", superseded_by="c1")
+
+
+# ---------------------------------------------------------------------------
+# MED-MIGRATION-COMMIT — m0013 persists through the runner pattern
+# ---------------------------------------------------------------------------
+
+
+class TestM0013Persistence:
+    """Story MED-MIGRATION-COMMIT — verify the m0013 index survives a
+    process restart via the standard ``migrate_to_latest`` runner.
+
+    The framework wraps each ``up()`` in an explicit ``BEGIN IMMEDIATE
+    ... COMMIT`` (parallax.migrations._manual_tx); the m0013 ``up()``
+    issues only ``CREATE INDEX IF NOT EXISTS`` so the index ought to be
+    durable.  This test pins that contract."""
+
+    def test_m0013_persistence_under_runner_pattern(self, tmp_path: pathlib.Path) -> None:
+        db = tmp_path / "m0013_persistence.db"
+        # First connection: apply migrations.
+        c1 = connect(db)
+        migrate_to_latest(c1)
+        idx_before = c1.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name='events' AND name='idx_events_event_type_correlation_id'"
+        ).fetchone()
+        assert idx_before is not None
+        c1.close()
+
+        # Second connection: the index must still exist (migrations were
+        # committed).
+        c2 = connect(db)
+        try:
+            idx_after = c2.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='events' AND name='idx_events_event_type_correlation_id'"
+            ).fetchone()
+            assert idx_after is not None, (
+                "m0013 index lost across connection boundary — runner did "
+                "not commit the up() pass"
+            )
+            # Idempotent: re-running migrate_to_latest is a no-op.
+            applied = migrate_to_latest(c2)
+            assert applied == [], f"unexpected re-apply: {applied}"
+        finally:
+            c2.close()
