@@ -39,6 +39,7 @@ from parallax.router.types import DataQualityFlag
 
 __all__ = [
     "NO_CANONICAL_REF_SENTINEL",
+    "CONFLICT_EVENT_SYSTEM_USER_ID",
     "SCHEMA_VERSION",
     "DEDUP_WINDOW_SECONDS",
     "WriteFailure",
@@ -51,6 +52,11 @@ __all__ = [
 _log = get_logger("parallax.events.conflict_writer")
 
 NO_CANONICAL_REF_SENTINEL = "__no_canonical_ref__"
+# MED-USER-ID-SENTINEL — explicit sentinel for system-issued conflict
+# events that have no associated user_id (mirrors actor='system' on the
+# next column).  Operators can grep events.user_id == "__system__" to
+# isolate machine-emitted rows from user-emitted ones.
+CONFLICT_EVENT_SYSTEM_USER_ID = "__system__"
 SCHEMA_VERSION = "1.0"
 DEDUP_WINDOW_SECONDS = 3600  # 1 hour
 
@@ -353,10 +359,13 @@ def write_conflict_event(
         )
         payload_json = json.dumps(envelope, sort_keys=True)
         event_id = uuid.uuid4().hex
-        user_id = ""
+        # MED-USER-ID-SENTINEL — fall through to the documented system
+        # sentinel when the payload omits user_id (consistent with
+        # actor='system' on the next INSERT column).
+        user_id = CONFLICT_EVENT_SYSTEM_USER_ID
         if isinstance(payload, Mapping):
             uid = payload.get("user_id")
-            if isinstance(uid, str):
+            if isinstance(uid, str) and uid:
                 user_id = uid
 
         _insert_event_row(

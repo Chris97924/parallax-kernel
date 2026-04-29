@@ -376,6 +376,27 @@ def test_reset_write_failure_count_zeroes(
 
 
 # ---------------------------------------------------------------------------
+# MED-USER-ID-SENTINEL — '__system__' fallback for missing user_id
+# ---------------------------------------------------------------------------
+
+
+def test_no_user_id_uses_system_sentinel(conn: sqlite3.Connection) -> None:
+    """Story MED-USER-ID-SENTINEL — when payload omits user_id, the row's
+    user_id column is set to the documented '__system__' sentinel."""
+    from parallax.events.conflict_writer import CONFLICT_EVENT_SYSTEM_USER_ID
+
+    payload_no_uid = {
+        "primary": _evidence("p-sentinel"),
+        "secondary": _evidence("p-sentinel"),
+    }
+    eid = write_conflict_event(_decision(correlation_id="cid-sentinel"), payload_no_uid, conn)
+    assert eid != ""
+    row = conn.execute("SELECT user_id FROM events WHERE event_id = ?", (eid,)).fetchone()
+    assert row["user_id"] == CONFLICT_EVENT_SYSTEM_USER_ID
+    assert CONFLICT_EVENT_SYSTEM_USER_ID == "__system__"
+
+
+# ---------------------------------------------------------------------------
 # Migration idempotency (C)
 # ---------------------------------------------------------------------------
 
