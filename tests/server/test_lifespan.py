@@ -13,13 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from parallax.router.inflight import get_inflight_count, inflight_gauge
 from parallax.server.lifespan import _drain_inflight, drain_timeout_total
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,9 +67,7 @@ def test_lifespan_drains_immediately_when_no_inflight():
     assert get_inflight_count() == 0
     before = _get_drain_timeout_count()
 
-    asyncio.get_event_loop().run_until_complete(
-        _drain_inflight(timeout_seconds=1.0, poll_interval_seconds=0.05)
-    )
+    asyncio.run(_drain_inflight(timeout_seconds=1.0, poll_interval_seconds=0.05))
 
     after = _get_drain_timeout_count()
     assert after == before, "drain_timeout_total should not increment on clean drain"
@@ -94,7 +91,7 @@ def test_lifespan_waits_for_drain():
             _delayed_dec(),
         )
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
     after = _get_drain_timeout_count()
     assert after == before, "drain_timeout_total should not increment on clean drain"
@@ -109,14 +106,11 @@ def test_lifespan_timeout_increments_counter():
 
     before = _get_drain_timeout_count()
 
-    asyncio.get_event_loop().run_until_complete(
-        _drain_inflight(timeout_seconds=0.2, poll_interval_seconds=0.05)
-    )
+    asyncio.run(_drain_inflight(timeout_seconds=0.2, poll_interval_seconds=0.05))
 
     after = _get_drain_timeout_count()
     assert after == before + 1.0, (
-        f"drain_timeout_total should increment by 1 on timeout. "
-        f"Before={before}, after={after}"
+        f"drain_timeout_total should increment by 1 on timeout. " f"Before={before}, after={after}"
     )
 
 
@@ -141,15 +135,11 @@ def test_lifespan_uses_asyncio_sleep_not_time_sleep():
     def _fake_time_sleep(delay):
         time_sleep_calls.append(delay)
 
-    import time
-
     with (
         patch("asyncio.sleep", side_effect=_fake_asyncio_sleep),
         patch("time.sleep", side_effect=_fake_time_sleep),
     ):
-        asyncio.get_event_loop().run_until_complete(
-            _drain_inflight(timeout_seconds=5.0, poll_interval_seconds=0.05)
-        )
+        asyncio.run(_drain_inflight(timeout_seconds=5.0, poll_interval_seconds=0.05))
 
     assert asyncio_sleep_calls, "asyncio.sleep should have been called"
     assert not time_sleep_calls, (
@@ -164,9 +154,7 @@ def test_lifespan_logs_warning_on_timeout(caplog: pytest.LogCaptureFixture):
     inflight_gauge.inc()
 
     with caplog.at_level(logging.WARNING, logger="parallax.server.lifespan"):
-        asyncio.get_event_loop().run_until_complete(
-            _drain_inflight(timeout_seconds=0.15, poll_interval_seconds=0.05)
-        )
+        asyncio.run(_drain_inflight(timeout_seconds=0.15, poll_interval_seconds=0.05))
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "Expected at least one WARNING log on drain timeout"
@@ -182,13 +170,10 @@ def test_lifespan_logs_info_on_clean_drain(caplog: pytest.LogCaptureFixture):
     assert get_inflight_count() == 0
 
     with caplog.at_level(logging.INFO, logger="parallax.server.lifespan"):
-        asyncio.get_event_loop().run_until_complete(
-            _drain_inflight(timeout_seconds=1.0, poll_interval_seconds=0.05)
-        )
+        asyncio.run(_drain_inflight(timeout_seconds=1.0, poll_interval_seconds=0.05))
 
     infos = [r for r in caplog.records if r.levelno == logging.INFO]
     assert infos, "Expected at least one INFO log on clean drain"
     assert any(
-        "drain" in r.message.lower() or "complete" in r.message.lower()
-        for r in infos
+        "drain" in r.message.lower() or "complete" in r.message.lower() for r in infos
     ), f"INFO log should mention drain completion. Got: {[r.message for r in infos]}"
