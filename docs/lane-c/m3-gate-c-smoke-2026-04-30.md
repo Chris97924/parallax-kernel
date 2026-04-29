@@ -128,3 +128,57 @@ Gate C is verified when:
 
 - **Story 1 (Gate B Aphelion endpoint smoke) DROPPED 2026-04-30**: real Aphelion HTTP adapter is M4 scope; current `aphelion_stub.py` always raises by design. Gate C subsumes the relevant fallback verification.
 - Real DoD verification (Orbit M6 Commit B canary + 14-day corpus + 72h window) remains outside Gate C scope — tracked in M3 plan §6.
+
+---
+
+## Re-verdict 2026-04-30 post-review-fix-cycle
+
+**Branch tip:** `a71e348` (post-Wave-4 fix-cycle: 5 HIGH + JSONL-PRODUCER + 11 MED + 3 test-gap landed on top of `3663b56`).
+
+**JSONL producer landed in this fix-cycle.** Pre-fix, `parallax/router/dual_read_metrics.py` was a perfect *reader* but no producer wrote the JSONL files it consumed; every Gate C smoke run was vacuous on zero records. The new module `parallax/router/dual_read_decision_log.py` is now wired into `DualReadRouter.query()` (best-effort, fail-closed) so live dual-read traffic produces the per-day JSONL files the metrics module reads.
+
+```text
+Branch tip:                  a71e348 test(m3b-review): TEST-GAP-DEDUP-BOUNDARY + TEST-GAP-CONFLICT-RATE-BREACH
+Run timestamp (UTC):         2026-04-30T post-fix-cycle
+
+Full m3b suite:              671 → 709 passed, 4 xfailed
+  pytest tests/router/ tests/events/ tests/server/ tests/scripts/ --no-cov
+
+Net new tests added in fix-cycle:
+  H1   (dedup SELECT scaling):              +2
+  H2   (row_factory enforced):              +2
+  H3   (_QT_OWNERSHIP fallback):            +1
+  H4   (write-failure counter):             +3
+  H5   (CLI missing-dir distinct):          +3
+  MED-MALFORMED-COUNTER:                    +2 (1 metrics + 1 CLI)
+  JSONL-PRODUCER:                           +17 (16 unit + 1 integration)
+  MED-METRICS-CACHE/EXC-CLASS:              +2
+  MED-MIGRATION-COMMIT:                     +1
+  MED-USER-ID-SENTINEL:                     +1
+  MED-LOWS-BUNDLED (idx rename, etc.):      0  (refactor — existing tests update)
+  TEST-GAP-DEDUP-BOUNDARY:                  +2
+  TEST-GAP-CONFLICT-RATE-BREACH:            +1
+                                            ----
+                                            +37  (671 + 37 = 708; +1 from updated dual_read_result test = 709)
+
+Coverage (post-fix-cycle):
+  parallax/router/live_arbitration.py:        100%   (unchanged)
+  parallax/events/conflict_writer.py:         ≥93%   (refactor + new counters / sentinel)
+  parallax/router/dual_read_metrics.py:       ≥85%   (LoadResult / compute_all_rates added)
+  scripts/dual_read_continuity_check.py:      ≥89%   (--allow-missing-dir branch covered)
+  parallax/router/dual_read_decision_log.py:  93%    (NEW — meets ≥85% threshold)
+
+ruff check:        clean across all touched files
+black --check:     clean
+
+CLI smoke (clean tmp dir, --since=72h --min-records=0):  exit 0, all 7 thresholds met,
+  log_dir_missing: false, malformed: 0, total_records: 0
+```
+
+**Re-verdict:** ✅ **PASSED** at `a71e348`. The JSONL producer now exists, so post-canary smoke against a populated stream will report non-zero coverage instead of trivially passing on 0 records.
+
+**Open items deferred per PRD `out_of_scope`:**
+- Real Aphelion HTTP client adapter (M4)
+- PR #29 ready-mark (still gated on Orbit M6 Commit B canary + 14-day corpus + 72h DoD)
+- Production rollout PR for DualReadRouter wiring
+- p99 latency real value (placeholder 0.0 stays until T1.4 follow-up)
