@@ -353,16 +353,12 @@ class DualReadRouter:
 
         self._record(request.user_id, outcome)
         # JSONL-PRODUCER — record dual-read decision for downstream metrics.
-        # Map the per-call outcome onto the producer's 4-value vocabulary:
-        # match/diverge/primary_only → "dual_attempted"; "aphelion_unreachable"
-        # stays its own bucket for the unreachable_rate gauge.
-        producer_outcome = (
-            "aphelion_unreachable"
-            if outcome == "aphelion_unreachable"
-            else "primary_only" if outcome == "primary_only" else "dual_attempted"
-        )
+        # Pass outcome through verbatim (5-value DualReadOutcome vocabulary:
+        # match | diverge | primary_only | aphelion_unreachable | skipped) so
+        # discrepancy_rate (counts 'diverge') and write_error_rate (filters
+        # by key) see the records they're contracted to count.
         self._log_decision(
-            outcome=producer_outcome,
+            outcome=outcome,
             correlation_id=cid,
             query_type=request.query_type.value,
             winning_source=arbitration.winning_source,

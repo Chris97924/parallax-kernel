@@ -21,6 +21,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 def _write(log_dir: Path, records: list[dict[str, Any]], date: str = "2026-04-26") -> Path:
     """Append dual-read decision records to a daily JSONL file."""
@@ -39,7 +41,7 @@ def _record(
     data_quality_flag: str = "normal",
     crosswalk_status: str = "ok",
     circuit_breaker_tripped: bool = False,
-    write_error: bool = False,
+    write_error_observed: bool = False,
     correlation_id: str = "cid-1",
     user_id: str = "u1",
     **extra: Any,
@@ -50,7 +52,7 @@ def _record(
         "data_quality_flag": data_quality_flag,
         "crosswalk_status": crosswalk_status,
         "circuit_breaker_tripped": circuit_breaker_tripped,
-        "write_error": write_error,
+        "write_error_observed": write_error_observed,
         "correlation_id": correlation_id,
         "user_id": user_id,
     }
@@ -204,7 +206,7 @@ def test_write_error_rate_counts_write_error_records(tmp_path: Path) -> None:
     now = _dt.datetime(2026, 4, 26, 12, 0, tzinfo=_dt.UTC)
     ts = "2026-04-26T11:30:00.000000+00:00"
     records = [_record(outcome="match", timestamp=ts) for _ in range(99)]
-    records.append(_record(outcome="match", timestamp=ts, write_error=True))
+    records.append(_record(outcome="match", timestamp=ts, write_error_observed=True))
     records.extend(_record(outcome="aphelion_unreachable", timestamp=ts) for _ in range(40))
     _write(tmp_path, records)
     rate = m.write_error_rate("1h", log_dir=tmp_path, now=now)
@@ -403,3 +405,95 @@ def test_load_records_counts_malformed(tmp_path: Path) -> None:
     assert len(result.records) == 3
     assert result.malformed == 2
     assert result.dir_missing is False
+
+
+# ---------------------------------------------------------------------------
+# Producer→reader integration (Codex P1×2 follow-ups on PR #29)
+# ---------------------------------------------------------------------------
+
+
+def test_router_diverge_outcome_counted_by_discrepancy_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real DualReadRouter producing 'diverge' outcomes must increment discrepancy_rate.
+
+    Regression guard for Codex P1#1: the producer used to bucket
+    match/diverge/primary_only into a single 'dual_attempted' label
+    before appending, but discrepancy_rate counts records whose outcome
+    is exactly 'diverge' — so it stuck at 0.0 in production.
+    """
+    from parallax.retrieval.contracts import RetrievalEvidence
+    from parallax.router import dual_read_metrics as m
+    from parallax.router.contracts import QueryRequest
+    from parallax.router.dual_read import DualReadRouter
+    from parallax.router.types import QueryType
+
+    monkeypatch.setenv("DUAL_READ", "true")
+    monkeypatch.setenv("DUAL_READ_LOG_ENABLED", "true")
+    monkeypatch.setenv("DUAL_READ_LOG_DIR", str(tmp_path))
+
+    def _ev(*ids: str) -> RetrievalEvidence:
+        return RetrievalEvidence(
+            hits=tuple({"id": i, "kind": "memory", "score": 1.0} for i in ids),
+            stages=("test",),
+        )
+
+    class _StubPort:
+        def __init__(self, result: RetrievalEvidence) -> None:
+            self._result = result
+
+        def query(self, request: QueryRequest) -> RetrievalEvidence:
+            return self._result
+
+    primary = _StubPort(_ev("a", "b"))
+    secondary = _StubPort(_ev("a", "b", "c"))  # extra hit → diverge
+    router = DualReadRouter(primary=primary, secondary=secondary)
+
+    result = router.query(
+        QueryRequest(query_type=QueryType.RECENT_CONTEXT, user_id="u1", params=None)
+    )
+    assert result.outcome == "diverge"
+
+    now = _dt.datetime.now(_dt.UTC)
+    rate = m.discrepancy_rate("1h", log_dir=tmp_path, now=now)
+    assert rate > 0, (
+        "discrepancy_rate must count 'diverge' records emitted by the router; "
+        "if 0.0, the producer is collapsing diverge into a different outcome bucket"
+    )
+
+
+def test_write_error_rate_reads_producer_emitted_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """write_error_rate must read the actual key the JSONL producer emits.
+
+    Regression guard for Codex P1#2: the reader read 'write_error' but
+    the producer writes 'write_error_observed' (matching
+    DualReadResult.write_error_observed), so the rate stuck at 0.0.
+    """
+    from parallax.router import dual_read_decision_log as ddlog
+    from parallax.router import dual_read_metrics as m
+
+    monkeypatch.setenv("DUAL_READ_LOG_ENABLED", "true")
+
+    anchor = _dt.datetime.now(_dt.UTC)
+    base = {
+        "correlation_id": "cid-good",
+        "query_type": "recent_context",
+        "outcome": "match",
+        "winning_source": "parallax",
+        "policy_version": "v0.3.0-rc",
+        "write_error_observed": False,
+        "conflict_event_id": None,
+        "data_quality_flag": "normal",
+    }
+    bad = {**base, "correlation_id": "cid-bad", "write_error_observed": True}
+
+    ddlog.append_decision(base, log_dir=tmp_path, now=anchor)
+    ddlog.append_decision(bad, log_dir=tmp_path, now=anchor)
+
+    rate = m.write_error_rate("1h", log_dir=tmp_path, now=anchor)
+    assert rate > 0, (
+        "write_error_rate must count records whose key matches the producer's "
+        "emitted field name (write_error_observed); 0.0 means a key-name mismatch"
+    )

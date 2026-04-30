@@ -21,8 +21,9 @@ Required fields (schema_version="1.0"):
     parses these lines without a schema bump
   - ``correlation_id`` — opaque request id
   - ``query_type`` — :class:`parallax.router.types.QueryType` value
-  - ``outcome`` — one of ``primary_only`` | ``dual_attempted`` |
-    ``aphelion_unreachable`` | ``skipped``
+  - ``outcome`` — one of ``match`` | ``diverge`` | ``primary_only`` |
+    ``aphelion_unreachable`` | ``skipped`` (5-value DualReadOutcome vocabulary
+    from :class:`parallax.router.contracts.DualReadResult`).
   - ``winning_source`` — ``parallax`` | ``aphelion`` | ``tie`` |
     ``fallback`` | ``null`` (skipped path)
   - ``policy_version`` — version label of the rule table

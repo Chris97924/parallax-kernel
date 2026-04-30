@@ -19,7 +19,9 @@ Each line is a single JSON object with at least:
   - ``crosswalk_status`` — optional, ``"miss"`` triggers crosswalk-miss
     counting.
   - ``circuit_breaker_tripped`` — optional bool.
-  - ``write_error`` — optional bool.
+  - ``write_error_observed`` — optional bool; matches the JSONL producer's
+    field name (``parallax.router.dual_read_decision_log.append_decision``)
+    and ``DualReadResult.write_error_observed``.
 
 Records with malformed JSON or unparseable timestamps are silently dropped
 (they cannot be window-filtered safely).
@@ -369,7 +371,7 @@ def write_error_rate(
     denom_records = _excluding_unreachable(records)
     if not denom_records:
         return 0.0
-    errors = sum(1 for r in denom_records if r.get("write_error") is True)
+    errors = sum(1 for r in denom_records if r.get("write_error_observed") is True)
     return errors / len(denom_records)
 
 
@@ -467,7 +469,7 @@ def compute_all_rates(
             if isinstance(eid, str) and eid:
                 conflicts += 1
         c_rate = conflicts / denom_n
-        w_rate = sum(1 for r in denom if r.get("write_error") is True) / denom_n
+        w_rate = sum(1 for r in denom if r.get("write_error_observed") is True) / denom_n
         x_rate = sum(1 for r in denom if r.get("crosswalk_status") == "miss") / denom_n
 
     if all_n == 0:

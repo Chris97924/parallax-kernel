@@ -741,7 +741,7 @@ def test_query_appends_to_decision_log(tmp_path, monkeypatch: pytest.MonkeyPatch
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record["correlation_id"] == r.correlation_id
-    assert record["outcome"] == "dual_attempted"
+    assert record["outcome"] == "match"
     assert record["query_type"] == "recent_context"
     assert record["winning_source"] == "parallax"
     assert record["schema_version"] == "1.0"
