@@ -47,6 +47,7 @@ from parallax.server.lifespan import parallax_lifespan
 from parallax.server.middleware.dual_read_snapshot import install_middleware
 from parallax.server.routes.admin.circuit_breaker import router as admin_circuit_breaker_router
 from parallax.server.routes.backfill import router as backfill_router
+from parallax.server.routes.event import router as event_router
 from parallax.server.routes.export import router as export_router
 from parallax.server.routes.ingest import router as ingest_router
 from parallax.server.routes.inspect import router as inspect_router
@@ -173,6 +174,7 @@ def create_app(
         }
 
     app.include_router(ingest_router)
+    app.include_router(event_router)
     app.include_router(query_router)
     app.include_router(inspect_router)
     app.include_router(export_router)

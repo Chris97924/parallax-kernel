@@ -17,6 +17,8 @@ __all__ = [
     "IngestClaimRequest",
     "IngestResponse",
     "RouterIngestResponse",
+    "EventIngestRequest",
+    "EventIngestResponse",
     "BackfillBodyRequest",
     "ArbitrationDecisionDTO",
     "BackfillReportResponse",
@@ -185,3 +187,32 @@ class ErrorResponse(BaseModel):
 class ExportMemoryMdResponse(BaseModel):
     memory_md: str
     companion_files: dict[str, str]
+
+
+class EventIngestRequest(_StrictModel):
+    """Inbound event-ingest envelope.
+
+    Mirror of the dual-write envelope shape produced by Orbit's
+    ``parallax_event_writer._build_envelope`` (Orbit M6 dual-write hook).
+    Persisted via :func:`parallax.events.record_event` as a system-level
+    audit row (``target_kind=None``).
+    """
+
+    source: str = Field(min_length=1, max_length=64)
+    source_instance: str = Field(min_length=1, max_length=128)
+    schema_version: str = Field(min_length=1, max_length=32)
+    event_type: str = Field(min_length=1, max_length=64)
+    run_id: str = Field(min_length=1, max_length=64)
+    record_id: str = Field(min_length=1, max_length=64)
+    created_at: str = Field(min_length=1, max_length=64)
+    commit_sha: str = Field(min_length=1, max_length=64)
+    payload_hash: str = Field(min_length=1, max_length=128)
+    judge_metadata: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    user_id: str | None = None
+
+
+class EventIngestResponse(BaseModel):
+    event_id: str
+    user_id: str
+    event_type: str
