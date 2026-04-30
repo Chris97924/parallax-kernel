@@ -87,8 +87,7 @@ def record_event(
                     target_id=target_id,
                 )
                 raise ValueError(
-                    f"orphan event rejected: ({target_kind!r}, {target_id!r}) "
-                    f"does not exist"
+                    f"orphan event rejected: ({target_kind!r}, {target_id!r}) " f"does not exist"
                 )
 
     event_id = _ulid()
@@ -242,14 +241,11 @@ def transition_claim_state(
             )
 
         if not is_allowed_transition("claim", from_state, to_state):
-            raise ValueError(
-                f"transition {from_state!r} -> {to_state!r} not allowed for claims"
-            )
+            raise ValueError(f"transition {from_state!r} -> {to_state!r} not allowed for claims")
 
         updated_at = now_iso()
         cursor = conn.execute(
-            "UPDATE claims SET state = ?, updated_at = ? "
-            "WHERE claim_id = ? AND state = ?",
+            "UPDATE claims SET state = ?, updated_at = ? " "WHERE claim_id = ? AND state = ?",
             (to_state, updated_at, claim_id, from_state),
         )
         if cursor.rowcount == 0:

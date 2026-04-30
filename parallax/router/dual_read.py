@@ -18,11 +18,14 @@ Hard invariants — never violated:
 
 from __future__ import annotations
 
+import dataclasses
+import sqlite3
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING
 
+from parallax.events.conflict_writer import write_conflict_event
 from parallax.obs.log import get_logger
 from parallax.router.aphelion_stub import AphelionUnreachableError
 from parallax.router.circuit_breaker import get_breaker_state
@@ -32,6 +35,8 @@ from parallax.router.discrepancy_live import (
     DualReadOutcome,
     record_dual_read_outcome,
 )
+from parallax.router.dual_read_decision_log import append_decision
+from parallax.router.live_arbitration import arbitrate
 from parallax.router.ports import QueryPort
 
 # Import _hits_equal from shadow.py directly (Q7: reuse, do NOT copy-paste).
@@ -100,12 +105,19 @@ class DualReadRouter:
         live_counter: LiveDiscrepancyCounter | None = None,
         executor: ThreadPoolExecutor | None = None,
         secondary_timeout_ms: float = 100.0,
+        events_conn: sqlite3.Connection | None = None,
     ) -> None:
         self._primary = primary
         self._secondary = secondary
         self._live_counter = live_counter
         self._executor = executor or ThreadPoolExecutor(max_workers=2)
         self._secondary_timeout_ms = secondary_timeout_ms
+        # M3b Phase 2 (US-005): optional events DB connection used to
+        # emit ``arbitration_conflict`` rows when an arbitration decision
+        # requires manual review.  None disables conflict-event logging
+        # (e.g. unit tests for the dual-read mechanics that don't care
+        # about the events table).
+        self._events_conn = events_conn
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,6 +180,15 @@ class DualReadRouter:
                 aphelion_unreachable_reason=None,
             )
             self._record(request.user_id, result.outcome)
+            self._log_decision(
+                outcome="skipped",
+                correlation_id=cid,
+                query_type=request.query_type.value,
+                winning_source=None,
+                policy_version="",
+                conflict_event_id=None,
+                write_error_observed=False,
+            )
             return result
 
         # ------------------------------------------------------------------
@@ -191,6 +212,15 @@ class DualReadRouter:
                 aphelion_unreachable_reason=None,
             )
             self._record(request.user_id, result.outcome)
+            self._log_decision(
+                outcome="skipped",
+                correlation_id=cid,
+                query_type=request.query_type.value,
+                winning_source=None,
+                policy_version="",
+                conflict_event_id=None,
+                write_error_observed=False,
+            )
             return result
 
         # ------------------------------------------------------------------
@@ -263,6 +293,52 @@ class DualReadRouter:
                 outcome = "primary_only"
                 secondary_result = None
 
+        # M3b Phase 2 (US-004-M3-T2.1): live cross-store arbitration. We
+        # ran the dual dispatch — ``arbitrate`` is pure, no I/O, and
+        # correctly resolves ``"fallback"`` when ``secondary_result`` is
+        # ``None`` or empty (crosswalk-miss path).  Attach the verdict
+        # only on dual-attempt paths; ``"skipped"`` short-circuits above
+        # never reach here.
+        arbitration = arbitrate(
+            primary=primary_result,  # type: ignore[arg-type]
+            secondary=secondary_result,  # type: ignore[arg-type]
+            query_type=request.query_type,
+            correlation_id=cid,
+        )
+
+        # M3b Phase 2 (US-005-M3-T2.2): when the arbitration verdict
+        # requires manual review (winning_source in {"tie","fallback"}),
+        # emit an ``arbitration_conflict`` envelope row to the events
+        # table.  Best-effort: ``write_conflict_event`` is fail-closed
+        # and returns "" on any exception — observability never crashes
+        # the canonical query path.  The wiring is gated on an explicit
+        # ``events_conn`` having been passed at construction time so
+        # call sites that opt out (or unit tests) skip the write
+        # entirely with no overhead.
+        write_error_observed = False
+        if arbitration.requires_manual_review and self._events_conn is not None:
+            try:
+                payload_for_writer = {
+                    "primary": primary_result,
+                    "secondary": secondary_result,
+                    "user_id": request.user_id,
+                }
+                event_id = write_conflict_event(arbitration, payload_for_writer, self._events_conn)
+                if event_id:
+                    arbitration = dataclasses.replace(arbitration, conflict_event_id=event_id)
+                else:
+                    # H4 — empty event_id signals the writer caught an
+                    # exception. Surface that on the DualReadResult so the
+                    # JSONL decision log records the write-error path.
+                    write_error_observed = True
+            except Exception as exc:  # noqa: BLE001 — fail-closed
+                _safe_log_warning(
+                    "conflict_event_write_failed",
+                    exc_class=type(exc).__name__,
+                    exc_str=str(exc),
+                )
+                write_error_observed = True
+
         result = DualReadResult(
             outcome=outcome,
             primary=primary_result,  # type: ignore[arg-type]
@@ -271,14 +347,66 @@ class DualReadRouter:
             latency_primary_ms=latency_primary_ms,
             latency_secondary_ms=latency_secondary_ms,
             aphelion_unreachable_reason=unreachable_reason,
+            arbitration=arbitration,
+            write_error_observed=write_error_observed,
         )
 
         self._record(request.user_id, outcome)
+        # JSONL-PRODUCER — record dual-read decision for downstream metrics.
+        # Pass outcome through verbatim (5-value DualReadOutcome vocabulary:
+        # match | diverge | primary_only | aphelion_unreachable | skipped) so
+        # discrepancy_rate (counts 'diverge') and write_error_rate (filters
+        # by key) see the records they're contracted to count.
+        self._log_decision(
+            outcome=outcome,
+            correlation_id=cid,
+            query_type=request.query_type.value,
+            winning_source=arbitration.winning_source,
+            policy_version=arbitration.policy_version,
+            conflict_event_id=arbitration.conflict_event_id,
+            write_error_observed=write_error_observed,
+        )
         return result
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _log_decision(
+        self,
+        *,
+        outcome: str,
+        correlation_id: str,
+        query_type: str,
+        winning_source: str | None,
+        policy_version: str,
+        conflict_event_id: str | None,
+        write_error_observed: bool,
+    ) -> None:
+        """Best-effort append to the dual-read decision JSONL log.
+
+        Best-effort: any failure inside the producer is swallowed; the
+        canonical query path must never raise from observability code.
+        """
+        try:
+            append_decision(
+                {
+                    "correlation_id": correlation_id,
+                    "query_type": query_type,
+                    "outcome": outcome,
+                    "winning_source": winning_source,
+                    "policy_version": policy_version,
+                    "write_error_observed": write_error_observed,
+                    "conflict_event_id": conflict_event_id,
+                    "data_quality_flag": "normal",
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 — observability never crashes
+            _safe_log_warning(
+                "decision_log_append_failed",
+                exc_class=type(exc).__name__,
+                exc_str=str(exc),
+            )
 
     def _record(self, user_id: str, outcome: DualReadOutcome) -> None:
         """Record outcome to live counter + Prometheus gauges (optional).
