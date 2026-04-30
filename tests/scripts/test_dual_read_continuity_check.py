@@ -53,7 +53,7 @@ def _record(
     data_quality_flag: str = "normal",
     crosswalk_status: str = "ok",
     circuit_breaker_tripped: bool = False,
-    write_error: bool = False,
+    write_error_observed: bool = False,
 ) -> dict[str, Any]:
     return {
         "outcome": outcome,
@@ -61,7 +61,7 @@ def _record(
         "data_quality_flag": data_quality_flag,
         "crosswalk_status": crosswalk_status,
         "circuit_breaker_tripped": circuit_breaker_tripped,
-        "write_error": write_error,
+        "write_error_observed": write_error_observed,
     }
 
 
@@ -476,7 +476,11 @@ def test_main_in_process_write_error_breach(tmp_path: Path, capsys) -> None:
         _record(outcome="match", timestamp="2026-04-26T11:30:00.000000+00:00") for _ in range(99)
     ]
     records.append(
-        _record(outcome="match", timestamp="2026-04-26T11:30:00.000000+00:00", write_error=True)
+        _record(
+            outcome="match",
+            timestamp="2026-04-26T11:30:00.000000+00:00",
+            write_error_observed=True,
+        )
     )
     _write(tmp_path, records)
     rc = drc.main(
