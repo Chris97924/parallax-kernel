@@ -83,6 +83,7 @@ def _core_fingerprint(conn: sqlite3.Connection) -> str:
 
 
 def _crosswalk_exists(conn: sqlite3.Connection) -> bool:
+    """Return True if the ``crosswalk`` table exists in *conn*."""
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='crosswalk'"
     ).fetchone()
@@ -102,6 +103,7 @@ def _upsert_crosswalk(
     source_id: str | None,
     vault_path: str | None,
 ) -> None:
+    """Insert or update a single crosswalk mapping row."""
     now = now_iso()
     conn.execute(
         """
@@ -166,6 +168,7 @@ class BackfillRunner:
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
+        """Initialise with a SQLite connection for backfill operations."""
         self._conn = conn
 
     def _enumerate(
