@@ -27,6 +27,7 @@ class AphelionUnreachableError(Exception):
     """
 
     def __init__(self, reason: str) -> None:
+        """Initialise with a short reason tag for outcome classification."""
         super().__init__(f"Aphelion unreachable: {reason}")
         self.reason = reason
 
@@ -47,6 +48,12 @@ class AphelionReadAdapter:
         base_url: str | None = None,
         timeout_ms: float = 100.0,
     ) -> None:
+        """Initialise the stub adapter with optional base URL and timeout.
+
+        Args:
+            base_url: Aphelion API base URL (stored for real adapter; unused by stub).
+            timeout_ms: Shadow timeout in milliseconds (default 100ms).
+        """
         self._base_url = base_url
         self._timeout_ms = timeout_ms
 
