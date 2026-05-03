@@ -65,6 +65,7 @@ class InflightTracker:
     __slots__ = ()
 
     def __enter__(self) -> InflightTracker:
+        """Increment the inflight gauge and return self."""
         inflight_gauge.inc()
         return self
 
@@ -74,5 +75,6 @@ class InflightTracker:
         exc_val: BaseException | None,
         exc_tb: Any,
     ) -> None:
+        """Decrement the inflight gauge; does not suppress exceptions."""
         inflight_gauge.dec()
         # Return None (falsy) → exception propagates unchanged.

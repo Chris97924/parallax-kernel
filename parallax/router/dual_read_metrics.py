@@ -117,6 +117,7 @@ def _resolve_log_dir(log_dir: Path | str | None) -> Path:
 
 
 def _parse_timestamp(raw: str) -> _dt.datetime | None:
+    """Parse an ISO-8601 timestamp string, defaulting to UTC if naive."""
     try:
         parsed = _dt.datetime.fromisoformat(raw)
     except (TypeError, ValueError):
@@ -127,6 +128,7 @@ def _parse_timestamp(raw: str) -> _dt.datetime | None:
 
 
 def _file_date(path: Path) -> _dt.date | None:
+    """Extract the date from a ``dual-read-decisions-YYYY-MM-DD.jsonl`` filename."""
     match = _LOG_FILE_DATE_RE.match(path.name)
     if match is None:
         return None

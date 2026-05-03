@@ -53,6 +53,7 @@ _OP_LABEL_VALUES = frozenset({"read", "write"})
 def _get_or_create_histogram(
     name: str, doc: str, labelnames: list[str], buckets: list[float]
 ) -> prometheus_client.Histogram:
+    """Return an existing Histogram or create a new one (re-import safe)."""
     try:
         return prometheus_client.Histogram(name, doc, labelnames, buckets=buckets)
     except ValueError:
@@ -60,6 +61,7 @@ def _get_or_create_histogram(
 
 
 def _get_or_create_gauge(name: str, doc: str, labelnames: list[str]) -> prometheus_client.Gauge:
+    """Return an existing Gauge or create a new one (re-import safe)."""
     try:
         return prometheus_client.Gauge(name, doc, labelnames)
     except ValueError:
@@ -67,6 +69,7 @@ def _get_or_create_gauge(name: str, doc: str, labelnames: list[str]) -> promethe
 
 
 def _get_or_create_counter(name: str, doc: str, labelnames: list[str]) -> prometheus_client.Counter:
+    """Return an existing Counter or create a new one (re-import safe)."""
     try:
         return prometheus_client.Counter(name, doc, labelnames)
     except ValueError:
@@ -140,6 +143,7 @@ class _Cancellable:
         event: threading.Event,
         thread: threading.Thread | None = None,
     ) -> None:
+        """Initialise with a stop event and optional daemon thread reference."""
         self._stop_event = event
         self._thread = thread
 
@@ -189,6 +193,13 @@ class SQLiteGate:
         *,
         component: str = "m3_dual_read",
     ) -> None:
+        """Wrap *connection* with thread-safe locking and apply WAL pragmas.
+
+        Args:
+            connection: The ``sqlite3.Connection`` to wrap.
+            component: Label for Prometheus metrics; must be one of
+                ``ingest``, ``m2_shadow``, ``regular_query``, ``m3_dual_read``.
+        """
         if component not in _COMPONENT_LABEL_VALUES:
             raise ValueError(f"component={component!r} not in {sorted(_COMPONENT_LABEL_VALUES)}")
         self._conn = connection
@@ -394,6 +405,7 @@ class SQLiteGate:
         stop_event = threading.Event()
 
         def _run() -> None:
+            """Background loop that runs ``PRAGMA wal_checkpoint(PASSIVE)``."""
             while not stop_event.wait(timeout=interval_seconds):
                 try:
                     with self._lock:
