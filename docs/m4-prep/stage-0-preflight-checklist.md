@@ -1,4 +1,3 @@
-```markdown
 # M4 Stage 0 — Pre-flight Checklist
 
 > **文件版本**: v1.0.0  
@@ -105,7 +104,7 @@ curl -s "http://prometheus:9090/api/v1/query" \
 ### Checklist
 
 - [ ] **Aphelion v0.5.0+ 已部署**（package format only，非 retrieval API）
-- [ ] **aphelion_stub.py:53** 回傳 `status='secondary_unavailable'`（US-009.2 null-stub）
+- [ ] **`AphelionReadAdapter.query()`** 為 raise-only stub：`raise AphelionUnreachableError("not_implemented")`（US-009.2 null-stub；`DualReadRouter` 標記 `outcome="aphelion_unreachable"`）
 - [ ] **無真實 HTTP adapter wired**（deferred to M5+ ticket）
 
 ### 驗證命令
@@ -117,17 +116,22 @@ pip show aphelion 2>/dev/null | grep -i version
 python -c "import aphelion; print(aphelion.__version__)"
 # 預期 >= 0.5.0
 
-# 確認 stub 行為：fetch 回傳 secondary_unavailable
-grep -A2 'def fetch' parallax/router/aphelion_stub.py | head -5
-# 預期看到 status='secondary_unavailable'
+# 確認 stub 行為：query() raise AphelionUnreachableError("not_implemented")
+grep -A2 'def query' parallax/router/aphelion_stub.py | head -5
+# 預期看到 raise AphelionUnreachableError("not_implemented")
+
+# 確認 dual_read 路徑沒有被 stub 改動 break
+pytest tests/router/ -k dual_read -v 2>&1 | tail -5
+# 預期：全數 PASS（涵蓋 dual_read_router / dual_read_metrics / dual_read_decision_log
+#       / dual_read_result / dual_read_breaker_integration / is_dual_read_enabled）
 
 # 確認無真實 HTTP adapter 被 import
 grep -rn 'import.*aphelion.*http\|from.*aphelion.*http' parallax/ --include='*.py'
 # 預期：無輸出（exit 0, empty result）
 
 # 確認 stub 是唯一 wired 的 aphelion backend
-grep -rn 'aphelion_stub\|AphelionStub' parallax/router/ --include='*.py'
-# 預期：僅出現在 router config 中
+grep -rn 'aphelion_stub\|AphelionReadAdapter' parallax/router/ --include='*.py'
+# 預期：僅出現在 router config + dual_read 入口
 ```
 
 ---
@@ -140,12 +144,12 @@ grep -rn 'aphelion_stub\|AphelionStub' parallax/router/ --include='*.py'
 
 - [ ] **event_id 使用 UUID v7**（NOT hash-with-timestamp — clock drift 有 dup 風險）
 - [ ] **audit_log SQLite table 已建立**（schema: `event_id` PK, `request_at_iso`, `response_status`, ...）
-- [ ] **5 個 auto-rollback triggers 已接線**：
-  - error rate ≥ 0.5% / 5min window
-  - discrepancy rate ≥ 0.5% / 3min window
-  - p99 latency ≥ 100ms / 5min window
-  - data_loss > 0 → **immediate** rollback
-  - minimum 50 hits 保護（避免小樣本誤觸發）
+- [ ] **4 rollback triggers + 1 min-hits gate 已接線**（cf. `us-009-acceptance-criteria.md` §3.3）：
+  - **T1-error-rate**: error rate ≥ 0.5% / 5min sliding → trip rollback
+  - **T2-discrepancy-rate**: discrepancy rate ≥ 0.5% / 3min sliding → trip rollback
+  - **T3-p99-latency**: p99 latency ≥ 100ms / 5min sliding → trip rollback
+  - **T4-data-loss**: data_loss > 0 → **immediate** trip rollback
+  - **T5-min-hits-gate**: hits < 50 / 5min sliding → gate active（將 T1-T4 判定標記為 `insufficient_data`，gate 自身不 trip 也不 clear）
 - [ ] **hysteresis 30min cooldown** + manual ACK re-promote logic 已實作
 
 ### 驗證命令
@@ -191,9 +195,12 @@ grep -A5 'cooldown\|hysteresis' parallax/canary/rollback.py
 parallax canary --rollback-drill --dry-run
 # 預期 exit 0，輸出 drill steps + simulated metrics
 
-# drain in-flight requests 驗證
+# drain in-flight requests 驗證（smoke test 用 60s 超時加速 readiness check；
+# **僅驗 CLI 可呼叫**，**不**等同於 §7 的 prod-equivalent rollback drill）
 parallax canary --drain-test --timeout=60s
 # 預期：所有 in-flight requests drain 完畢，無 replay
+# ⚠️ 60s smoke 不會驗到 60-300s tail latency 的 in-flight 行為；
+#   prod-equivalent 的完整驗證在 §7 Rollback Path Drill（300s timeout）
 
 # Orbit re-emit + idempotency 保護驗證
 parallax canary --orbit-reemit-test
@@ -252,12 +259,12 @@ ls -la docs/m4-prep/canary-stage-runbook.md
 
 ### Rollback 步驟
 
-| 步驟 | 動作 | 預期耗時 |
-|------|------|----------|
-| 1 | drain in-flight requests（60s wait） | ~60s |
-| 2 | flag flip `CANARY_ENABLED=false` | ~5s |
-| 3 | Orbit re-emit（idempotency 保護） | ~120s |
-| 4 | verify metric 回 baseline（5 min check） | ~300s |
+| 步驟 | 動作 | 預期耗時 | Timeout |
+|------|------|----------|---------|
+| 1 | drain in-flight requests | ~60s（典型）/ 上限 300s | `DRAIN_TIMEOUT_SEC=300`（@50% 改用 600；對齊 `canary-stage-runbook.md` §7） |
+| 2 | flag flip `ENABLE_M4_CANARY=false` | ~5s | n/a |
+| 3 | Orbit re-emit（idempotency 保護） | ~120s | n/a |
+| 4 | verify metric 回 baseline（5 min check） | ~300s | n/a |
 
 ### Checklist
 
@@ -267,11 +274,13 @@ ls -la docs/m4-prep/canary-stage-runbook.md
 
 ```bash
 # 步驟 1: drain in-flight requests
-parallax canary --drain --timeout=60s
-echo "Step 1 done — drain complete"
+# 對齊 canary-stage-runbook.md §7 Step 1 的 prod default（@50% 改用 600s）
+export DRAIN_TIMEOUT_SEC=${DRAIN_TIMEOUT_SEC:-300}
+parallax canary --drain --timeout=${DRAIN_TIMEOUT_SEC}s
+echo "Step 1 done — drain complete (timeout=${DRAIN_TIMEOUT_SEC}s)"
 
-# 步驟 2: flag flip
-parallax canary --set CANARY_ENABLED=false
+# 步驟 2: flag flip（Python CLI；對齊 runbook §7 Step 2）
+parallax canary --set ENABLE_M4_CANARY=false
 echo "Step 2 done — canary disabled"
 
 # 步驟 3: Orbit re-emit
@@ -413,4 +422,3 @@ parallax canary --promote --stage=10 --ack-by=chris
 
 > **全 25 項 checkbox 全綠 → GO**  
 > **任一紅 → STOP → 記錄 blocker → 通知 Chris**
-```

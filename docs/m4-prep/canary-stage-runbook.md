@@ -59,14 +59,17 @@
 
 ### 3.2 DoD 驗證（每 6 小時執行）
 
-每 6 小時（T+0h, T+6h, T+12h, T+18h, T+24h）執行以下檢查：
+每 6 小時（T+0h, T+6h, T+12h, T+18h, T+24h）執行以下檢查（涵蓋 `us-009-acceptance-criteria.md` §3.3 全部 5 個自動 rollback 訊號）：
 
 | 指標 | 閾值 | 查詢方式 |
 |------|------|----------|
-| 寫入成功率 | ≥ 99.9% | Dashboard panel `Write Success Rate (Canary)` |
-| 延遲增幅 | ≤ 10% vs baseline | Dashboard panel `P99 Latency Delta` |
+| 寫入成功率 (T1-error-rate 反向) | ≥ 99.9% | Dashboard panel `Write Success Rate (Canary)` |
+| 結果不一致率 (T2-discrepancy-rate) | ≤ 0.5% / 3min sliding | Dashboard panel `Discrepancy Rate (Canary)` |
+| 延遲增幅 (T3-p99-latency 相對版) | ≤ 10% vs baseline | Dashboard panel `P99 Latency Delta` |
+| 資料遺失 (T4-data-loss) | = 0（零容忍） | Dashboard panel `Data Loss Count` |
+| 樣本量保護 (T5-min-hits-gate) | hits ≥ 50 / 5min sliding | Dashboard panel `Canary Hits / 5min`（hits < 50 → 暫停 trigger 判定） |
 
-若任一指標 breach，**立即進入 rollback 流程**（見第 7 節）。
+若任一 trigger 指標 breach，**立即進入 rollback 流程**（見第 7 節）。T5 gate active 時，T1-T4 trigger 自動標記為 `insufficient_data`，不執行 rollback 也不視為 PASS（等待樣本量回升）。
 
 ### 3.3 通過判定 → 推進 @10%
 
@@ -77,6 +80,8 @@
 ### 3.4 失敗 → Rollback（30 分鐘內完成）
 
 執行第 7 節 Rollback Playbook，目標 **30 分鐘內** 完成全部步驟。完成後通知 Chris 並記錄失敗原因。
+
+> **分層閾值說明（DoD vs auto-rollback）**：本節 §3.2 的 99.9% 寫入成功率為**人工推進 gate**（breach 時 oncall 走 §7 playbook 手動 rollback）；`us-009-acceptance-criteria.md` §3.3 T1-error-rate 0.5%（即成功率 < 99.5%）為**自主 backstop**（Canary Infra 自動 rollback）。兩者刻意分層：99.9% 是更嚴格的 promotion 標準，99.5% 是 oncall 來不及反應時的最後防線。99.5%–99.9% 帶內 PagerDuty Critical 會 page，但 auto-rollback 不啟動。
 
 ---
 
@@ -97,10 +102,12 @@
 
 | 指標 | 閾值 |
 |------|------|
-| Data loss | = 0（零容忍） |
+| Data loss (T4-data-loss) | = 0（零容忍，immediate trip） |
 | 新增 conflict | 無新增（與 @1% baseline 比對） |
-| 寫入成功率 | ≥ 99.9%（持續監控） |
-| 延遲增幅 | ≤ 10%（持續監控） |
+| 寫入成功率 (T1-error-rate 反向) | ≥ 99.9%（持續監控） |
+| 結果不一致率 (T2-discrepancy-rate) | ≤ 0.5% / 3min sliding（持續監控） |
+| 延遲增幅 (T3-p99-latency 相對版) | ≤ 10%（持續監控） |
+| 樣本量保護 (T5-min-hits-gate) | hits ≥ 50 / 5min sliding |
 
 ### 4.3 通過判定 → 推進 @50%
 
@@ -129,8 +136,9 @@
 
 ### 5.2 DoD 驗證（每 12 小時執行）
 
-所有 @10% 指標持續維持，額外關注：
+所有 @10% 指標持續維持（包含 T1-T4 trigger + T5 gate 全部 5 個訊號），額外關注：
 
+- **結果不一致率 (T2-discrepancy-rate)**：50% 流量下尤其關鍵，持續維持 ≤ 0.5% / 3min sliding；任何持續上升趨勢視為 silent data drift 警訊。
 - **資源用量**：CPU / memory / disk I/O 是否在預期範圍內。
 - **下游依賴**：L2 / L1 層是否有異常延遲或 error spike。
 
@@ -142,7 +150,7 @@
 
 ### 5.4 失敗 → Rollback（2-4 小時內完成）
 
-執行 Rollback Playbook。50% 流量回滾需更謹慎，建議 drain 時間拉長至 10 分鐘。
+執行 Rollback Playbook。50% 流量回滾需更謹慎，drain timeout 採 §7 per-stage 預設值的 @50% 列（**600s**，而非標準 300s），以容納 50% 流量下的 long-tail in-flight 請求。設定方式：執行 §7 Step 1 前 `export DRAIN_TIMEOUT_SEC=600`。
 
 ---
 
@@ -161,7 +169,8 @@
 
 ### 6.2 DoD 驗證（每 24 小時執行）
 
-- 所有先前階段指標持續維持。
+- 所有先前階段指標持續維持（包含 T1-T4 trigger + T5 gate 全部 5 個訊號）。
+- **結果不一致率 (T2-discrepancy-rate)**：全量流量下持續 ≤ 0.5% / 3min sliding；任何 spike 立即 escalate。
 - **全量穩定性**：無 performance regression、無 capacity 瓶頸。
 - **Rollback playbook 演練**：於 T+48h 前完成一次 staging 環境的完整 rollback 演練，記錄結果。
 
@@ -184,18 +193,31 @@
 
 ### Step 1: Drain In-Flight Requests（不重放）
 
+**Per-stage drain timeout 預設值**（執行前先 export，未設則預設 300s）：
+
+| Stage | `DRAIN_TIMEOUT_SEC` |
+|---|---|
+| @1% | 300 |
+| @10% | 300 |
+| @50% | 600（容納 50% 流量 long-tail in-flight） |
+| @100% | 300 |
+
 ```bash
-./canary-rollback.sh --drain --timeout 300
+# 依當前 stage export drain timeout（範例為 @50%）
+export DRAIN_TIMEOUT_SEC=${DRAIN_TIMEOUT_SEC:-300}
+
+# 觸發 drain（Python CLI；US-009.3 deliverable）
+parallax canary --drain --timeout=${DRAIN_TIMEOUT_SEC}s
 ```
 
-- 等待所有進行中的請求完成（最多 5 分鐘）。
+- 等待所有進行中的請求完成（@1%/@10%/@100% 上限 5 分鐘；@50% 上限 10 分鐘）。
 - **不重放**任何 in-flight 請求，避免重複寫入。
 - 確認 `inflight_requests_count = 0` 後進入下一步。
 
 ### Step 2: Flag Flip — Canary OFF
 
 ```bash
-./canary-rollback.sh --flag-off
+parallax canary --set ENABLE_M4_CANARY=false
 ```
 
 - 將 `ENABLE_M4_CANARY` 設為 `false`。
@@ -204,7 +226,7 @@
 ### Step 3: Orbit Re-Emit（Idempotency 保護）
 
 ```bash
-./canary-rollback.sh --orbit-reemit --idempotent
+parallax orbit --re-emit --idempotent
 ```
 
 - 觸發 Orbit 重新發送回滾期間可能遺漏的事件。

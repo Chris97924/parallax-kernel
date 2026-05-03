@@ -52,19 +52,22 @@
 
 ### 3.3 Auto-Rollback Gates
 
+> **結構：4 rollback triggers (T1-T4) + 1 min-hits gate (T5)**  
+> T1-T4 為 trip-or-clear 語義的 rollback trigger；T5 為 sample-size **gate**（保護機制），啟動時將 T1-T4 的判定結果標記為 `insufficient_data`，自身**不 trip rollback、不 clear**。Gate vs trigger 的區分需在實作時保留，並與 sibling 文件 `stage-0-preflight-checklist.md` §4 L148「minimum 50 hits 保護」用語一致。
+
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 1.9 | 五個 rollback trigger **各自獨立計算 metric**，互不影響。任一 trigger 達到閾值即 trip rollback | 單元測試：逐一觸發每個 trigger，確認其他 trigger 狀態不受影響 |
+| 1.9 | T1-T4 四個 rollback trigger **各自獨立計算 metric**，互不影響。T1-T4 任一 trigger 達到閾值即 trip rollback。**T5 gate 不在此獨立性條款範圍內**（gate 的跨 trigger 影響為設計語義，見 1.14） | 單元測試：逐一觸發 T1-T4 每個 trigger，確認其他 T1-T4 trigger 狀態不受影響 |
 
-五個 trigger 定義如下：
+四個 rollback trigger + 一個 min-hits gate 定義如下：
 
-| Trigger ID | Metric | 閾值 | 視窗 | 動作 |
-|---|---|---|---|---|
-| `T1-error-rate` | 錯誤率（5xx / total） | ≥ 0.5% | 5 min sliding | trip rollback |
-| `T2-discrepancy-rate` | 結果不一致率（mismatch / total） | ≥ 0.5% | 3 min sliding | trip rollback |
-| `T3-p99-latency` | p99 latency | ≥ 100 ms | 5 min sliding | trip rollback |
-| `T4-data-loss` | 資料遺失事件數 | > 0 | 累計（無視窗） | **immediate** trip rollback |
-| `T5-min-hits` | 最低請求數 | < 50 hits | 5 min sliding | **暫停判定**（資料不足，不 trip 也不 clear） |
+| ID | 角色 | Metric | 閾值 | 視窗 | 動作 |
+|---|---|---|---|---|---|
+| `T1-error-rate` | trigger | 錯誤率（5xx / total） | ≥ 0.5% | 5 min sliding | trip rollback |
+| `T2-discrepancy-rate` | trigger | 結果不一致率（mismatch / total） | ≥ 0.5% | 3 min sliding | trip rollback |
+| `T3-p99-latency` | trigger | p99 latency | ≥ 100 ms | 5 min sliding | trip rollback |
+| `T4-data-loss` | trigger | 資料遺失事件數 | > 0 | 累計（無視窗） | **immediate** trip rollback |
+| `T5-min-hits-gate` | **gate** | 最低請求數 | < 50 hits | 5 min sliding | gate active 時，T1-T4 判定標記為 `insufficient_data`；gate 自身**不 trip、不 clear** |
 
 | # | Criteria | 驗證方式 |
 |---|---|---|
@@ -72,7 +75,7 @@
 | 1.11 | `T2-discrepancy-rate`：在 3 min 視窗內 discrepancy rate 達到 0.5% 時 trip；低於 0.5% 時不 trip | 邊界測試：同上，視窗為 3 min |
 | 1.12 | `T3-p99-latency`：在 5 min 視窗內 p99 達到 100 ms 時 trip；99 ms 時不 trip | 邊界測試：注入 p99 = 99 ms 及 101 ms |
 | 1.13 | `T4-data-loss`：任何單一資料遺失事件立即 trip，無視視窗大小 | 單元測試：注入 1 筆 data_loss event，確認 immediate trip |
-| 1.14 | `T5-min-hits`：當 5 min 視窗內 hits < 50 時，所有其他 trigger 的判定結果標記為 `insufficient_data`，不執行 trip 也不執行 clear | 單元測試：注入 49 hits + error rate > 0.5%，確認標記為 `insufficient_data` |
+| 1.14 | `T5-min-hits-gate`：當 5 min 視窗內 hits < 50 時 gate active，T1-T4 trigger 的判定結果均標記為 `insufficient_data`，T1-T4 不執行 trip 也不執行 clear。此跨 trigger 影響為 gate 的**設計語義**，屬 1.9 獨立性條款的明文例外 | 單元測試：注入 49 hits + error rate > 0.5%，確認 T1 標記為 `insufficient_data`（非 trip） |
 
 ### 3.4 Hysteresis 機制
 
@@ -86,8 +89,8 @@
 
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 1.18 | 測試數量：5 個 trigger × pass/breach 邊界 × hysteresis = **≥ 15 tests**（最低門檻） | CI：`pytest tests/canary/ --collect-only -q \| tail -1` 確認 ≥ 15 |
-| 1.19 | 每個 trigger 至少有 2 個邊界測試（剛好低於閾值 PASS + 剛好達到閾值 BREACH） | 測試報告：逐條列出 trigger ID + pass/breach case |
+| 1.18 | 測試數量最低門檻 **≥ 15 tests**：T1-T4 四個 trigger × pass/breach 邊界 × hysteresis（≥ 12 tests）+ T5 gate 三組覆蓋（hits<50 active / hits=50 邊界 / hits>>50 inactive，≥ 3 tests）= **≥ 15** | CI：`pytest tests/canary/ --collect-only -q \| tail -1` 確認 ≥ 15 |
+| 1.19 | 每個 T1-T4 trigger 至少有 2 個邊界測試（剛好低於閾值 PASS + 剛好達到閾值 BREACH）；T5 gate 至少 1 組 hits=50 邊界測試 | 測試報告：逐條列出 trigger/gate ID + 對應 case |
 
 ---
 
@@ -95,10 +98,12 @@
 
 ### 4.1 Null-Stub 實作
 
+> **與既有合約對齊（M3a baseline）**：`parallax/router/aphelion_stub.py::AphelionReadAdapter.query()` 已是 raise-only stub（`raise AphelionUnreachableError("not_implemented")`），由 `DualReadRouter` 捕捉並標記 `outcome="aphelion_unreachable"`。US-009.2 的工作是**保持**此契約穩定，**不得**改為 return-based 介面（會影響 §7 O.2 既有 M3 router code）。所有 anchor 一律以 symbol（`AphelionReadAdapter.query`）為準，避免 line-number drift。
+
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 2.1 | `aphelion_stub.py` 第 53 行必須回傳 `RetrievalEvidence(status='secondary_unavailable', ...)`，**不得**包含任何 real HTTP adapter 邏輯 | Code review：確認 L53 為 stub return，無 `httpx` / `requests` / `urllib` import |
-| 2.2 | Stub 回傳的 `RetrievalEvidence` 物件必須包含所有必要欄位（`status`, `source`, `timestamp`, `metadata`），且 `status` 固定為 `'secondary_unavailable'` | 單元測試：呼叫 stub，assert 所有欄位存在且值正確 |
+| 2.1 | `parallax/router/aphelion_stub.py::AphelionReadAdapter.query()` 必須以 `raise AphelionUnreachableError("not_implemented")` 結束，**不得**包含任何 real HTTP adapter 邏輯 | Code review：確認 `query()` body 為 single-statement raise，無 `httpx` / `requests` / `urllib` import |
+| 2.2 | Stub 拋出的 `AphelionUnreachableError` 必須帶 `reason="not_implemented"`；既有 `DualReadRouter` 捕捉路徑（`outcome="aphelion_unreachable"`）必須維持綠燈，不得因 stub 改動而 break | 單元測試：`with pytest.raises(AphelionUnreachableError) as exc: adapter.query(req)` + assert `exc.value.reason == "not_implemented"`；整合測試 `pytest tests/router/ -k dual_read -v` 全 PASS |
 | 2.3 | **不得**嘗試實作 real HTTP adapter。任何包含 `httpx.get`、`requests.post`、或等效 HTTP 呼叫的程式碼均為 violation | Lint rule / code review：grep `httpx\|requests\|urllib` 於 `aphelion_stub.py`，結果應為 0 matches |
 | 2.4 | Real HTTP adapter 的實作留待 **M5 + Aphelion product spec ticket**，本 PR 不得預先建立 adapter skeleton 或 placeholder interface | Code review：確認無 `class AphelionAdapter` 或類似 forward-looking 抽象 |
 
@@ -106,7 +111,7 @@
 
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 2.5 | 既有 `dual_read` 路由在引入 stub 後**不得 break**。所有現有 `dual_read` 相關測試必須繼續 PASS | 整合測試：`pytest tests/router/test_dual_read.py -v` 全數 PASS |
+| 2.5 | 既有 `dual_read` 路由在引入 stub 後**不得 break**。所有現有 `dual_read` 相關測試必須繼續 PASS | 整合測試：`pytest tests/router/ -k dual_read -v` 全數 PASS（涵蓋 `test_dual_read_router.py`、`test_dual_read_metrics.py`、`test_dual_read_decision_log.py`、`test_dual_read_result.py`、`test_dual_read_breaker_integration.py`、`test_is_dual_read_enabled.py`） |
 | 2.6 | Stub 的引入不得改變 `dual_read` 路由的回傳型別（return type annotation 不變） | 型別檢查：`mypy tests/router/` 或 `pyright` 0 errors |
 
 ### 4.3 Test Coverage 要求
@@ -190,7 +195,7 @@
 
 | PR | 最低測試數 | 說明 |
 |---|---|---|
-| US-009.1 | ≥ 15 | 5 triggers × pass/breach × hysteresis |
+| US-009.1 | ≥ 15 | T1-T4 triggers × pass/breach × hysteresis (≥12) + T5 gate active/inactive (≥3) |
 | US-009.2 | ≥ 5 | stub shape + cross query type + dual_read 相容 |
 | US-009.3 | ≥ 46 | DoD (40) + drill (6) |
 | **合計** | **≥ 66** | |
