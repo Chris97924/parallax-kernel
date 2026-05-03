@@ -195,12 +195,11 @@ grep -A5 'cooldown\|hysteresis' parallax/canary/rollback.py
 parallax canary --rollback-drill --dry-run
 # 預期 exit 0，輸出 drill steps + simulated metrics
 
-# drain in-flight requests 驗證（smoke test 用 60s 超時加速 readiness check；
-# **僅驗 CLI 可呼叫**，**不**等同於 §7 的 prod-equivalent rollback drill）
+# drain in-flight requests — readiness smoke（CLI 可呼叫檢查）
+# 60s timeout 僅 smoke 用，不驗 60-300s long-tail；
+# prod-equivalent drain drill 見 §7（300s timeout）
 parallax canary --drain-test --timeout=60s
 # 預期：所有 in-flight requests drain 完畢，無 replay
-# ⚠️ 60s smoke 不會驗到 60-300s tail latency 的 in-flight 行為；
-#   prod-equivalent 的完整驗證在 §7 Rollback Path Drill（300s timeout）
 
 # Orbit re-emit + idempotency 保護驗證
 parallax canary --orbit-reemit-test

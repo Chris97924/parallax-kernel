@@ -59,7 +59,7 @@
 
 ### 3.2 DoD 驗證（每 6 小時執行）
 
-每 6 小時（T+0h, T+6h, T+12h, T+18h, T+24h）執行以下檢查（涵蓋 `us-009-acceptance-criteria.md` §3.3 全部 5 個自動 rollback 訊號）：
+每 6 小時（T+0h, T+6h, T+12h, T+18h, T+24h）執行以下檢查（對應 AC §3.3 T1-T5）：
 
 | 指標 | 閾值 | 查詢方式 |
 |------|------|----------|
@@ -69,7 +69,7 @@
 | 資料遺失 (T4-data-loss) | = 0（零容忍） | Dashboard panel `Data Loss Count` |
 | 樣本量保護 (T5-min-hits-gate) | hits ≥ 50 / 5min sliding | Dashboard panel `Canary Hits / 5min`（hits < 50 → 暫停 trigger 判定） |
 
-若任一 trigger 指標 breach，**立即進入 rollback 流程**（見第 7 節）。T5 gate active 時，T1-T4 trigger 自動標記為 `insufficient_data`，不執行 rollback 也不視為 PASS（等待樣本量回升）。
+任一 T1-T4 trigger breach **立即進入 rollback 流程**（見第 7 節）；T5 gate active 時 T1-T4 標記 `insufficient_data`，不 rollback、不視為 PASS（等樣本量回升）。
 
 ### 3.3 通過判定 → 推進 @10%
 
@@ -136,9 +136,9 @@
 
 ### 5.2 DoD 驗證（每 12 小時執行）
 
-所有 @10% 指標持續維持（包含 T1-T4 trigger + T5 gate 全部 5 個訊號），額外關注：
+所有 @10% 指標持續維持，額外關注：
 
-- **結果不一致率 (T2-discrepancy-rate)**：50% 流量下尤其關鍵，持續維持 ≤ 0.5% / 3min sliding；任何持續上升趨勢視為 silent data drift 警訊。
+- **結果不一致率 (T2)**：持續 ≤ 0.5% / 3min sliding；持續上升 = silent data drift 警訊。
 - **資源用量**：CPU / memory / disk I/O 是否在預期範圍內。
 - **下游依賴**：L2 / L1 層是否有異常延遲或 error spike。
 
@@ -169,8 +169,8 @@
 
 ### 6.2 DoD 驗證（每 24 小時執行）
 
-- 所有先前階段指標持續維持（包含 T1-T4 trigger + T5 gate 全部 5 個訊號）。
-- **結果不一致率 (T2-discrepancy-rate)**：全量流量下持續 ≤ 0.5% / 3min sliding；任何 spike 立即 escalate。
+- 所有先前階段指標持續維持。
+- **結果不一致率 (T2)**：持續 ≤ 0.5% / 3min sliding；spike 立即 escalate。
 - **全量穩定性**：無 performance regression、無 capacity 瓶頸。
 - **Rollback playbook 演練**：於 T+48h 前完成一次 staging 環境的完整 rollback 演練，記錄結果。
 
@@ -210,7 +210,7 @@ export DRAIN_TIMEOUT_SEC=${DRAIN_TIMEOUT_SEC:-300}
 parallax canary --drain --timeout=${DRAIN_TIMEOUT_SEC}s
 ```
 
-- 等待所有進行中的請求完成（@1%/@10%/@100% 上限 5 分鐘；@50% 上限 10 分鐘）。
+- 等待所有進行中的請求完成（上限 = `DRAIN_TIMEOUT_SEC` 設定值；預設 300s @1%/@10%/@100%、600s @50%）。
 - **不重放**任何 in-flight 請求，避免重複寫入。
 - 確認 `inflight_requests_count = 0` 後進入下一步。
 
