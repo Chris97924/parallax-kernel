@@ -1,4 +1,3 @@
-```markdown
 # M4 L3 Canary — 4-Stage Runbook
 
 > **文件版本**: v1.0  
@@ -276,4 +275,3 @@
 ---
 
 *本文件為 Parallax SRE 內部操作手冊，請勿外傳。*
-```

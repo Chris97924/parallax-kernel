@@ -1,11 +1,10 @@
-```markdown
 # US-009 M4 Canary Acceptance Criteria
 
 > **版本**：v1.0.0  
-> **日期**：2026-05-10  
+> **日期**：2026-05-03  
 > **狀態**：Draft — pending codex agent 接線實作  
-> **Plan ref**：`C:\Users\user\.omc\plans\m4-entry-plan.md`  
-> **Council vote**：2026-05-09，拆 3 PR（US-009.1 / US-009.2 / US-009.3）
+> **Plan ref**：見 §2 表格中的 `m4-entry-plan.md`（內部 plan，repo 外）  
+> **Council vote**：2026-05-01，拆 3 PR（US-009.1 / US-009.2 / US-009.3）
 
 ---
 
@@ -199,4 +198,3 @@
 ---
 
 *本文件為 M4 Canary acceptance spec 基準。任何修改需經 council review 並更新版本號。*
-```
