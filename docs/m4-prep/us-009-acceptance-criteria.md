@@ -86,7 +86,7 @@
 
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 1.18 | 測試數量：5 個 trigger × pass/breach 邊界 × hysteresis = **≥ 15 tests**（最低門檻） | CI：`pytest tests/canary/ -v --count` 確認 ≥ 15 |
+| 1.18 | 測試數量：5 個 trigger × pass/breach 邊界 × hysteresis = **≥ 15 tests**（最低門檻） | CI：`pytest tests/canary/ --collect-only -q \| tail -1` 確認 ≥ 15 |
 | 1.19 | 每個 trigger 至少有 2 個邊界測試（剛好低於閾值 PASS + 剛好達到閾值 BREACH） | 測試報告：逐條列出 trigger ID + pass/breach case |
 
 ---
@@ -152,8 +152,8 @@
 
 | # | Criteria | 驗證方式 |
 |---|---|---|
-| 3.14 | DoD scripts 測試：4 stages × 5 metrics × pass/fail = **≥ 40 test cases**（可合併為參數化測試） | CI：`pytest tests/dod/ -v --count` 確認 ≥ 40 |
-| 3.15 | Rollback drill 測試：drain + re-emit + idempotency 三個面向各至少 2 個測試 = **≥ 6 tests** | CI：`pytest tests/drill/ -v --count` 確認 ≥ 6 |
+| 3.14 | DoD scripts 測試：4 stages × 5 metrics × pass/fail = **≥ 40 test cases**（可合併為參數化測試） | CI：`pytest tests/dod/ --collect-only -q \| tail -1` 確認 ≥ 40 |
+| 3.15 | Rollback drill 測試：drain + re-emit + idempotency 三個面向各至少 2 個測試 = **≥ 6 tests** | CI：`pytest tests/drill/ --collect-only -q \| tail -1` 確認 ≥ 6 |
 
 ---
 
