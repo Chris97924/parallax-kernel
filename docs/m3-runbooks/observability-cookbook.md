@@ -26,16 +26,16 @@
 | # | Gauge 名稱 | Gauge 部署 | Alert 部署 | Alert 閾值（已部署）/ Rationale |
 |---|-----------|-----------|-----------|-------------------------------|
 | 1 | `parallax_dual_read_discrepancy_rate` | ✅ | ✅ `DualReadDiscrepancyRateHigh` | `> 0.001`（0.1 %）for 30m / severity warning（對齊 M3 DoD 的 0.1 % 門檻） |
-| 2 | `parallax_arbitration_conflict_rate` | ✅ | ⏳ proposed | gauge 已暴露但無 deployed alert；本文件 §4 內 `M3ArbitrationConflictHigh` 仍為 proposed |
-| 3 | `parallax_dual_read_write_error_rate` | ✅ | ⏳ proposed | gauge 已暴露但無 deployed alert；本文件 §4 內 `M3WriteErrorRateHigh` 仍為 proposed |
+| 2 | `parallax_arbitration_conflict_rate` | ✅ | ⏳ proposed `ArbitrationConflictRateHigh` | gauge 已暴露；alert YAML 在 §4.B，待 PR 進 rules.yml |
+| 3 | `parallax_dual_read_write_error_rate` | ✅ | ⏳ proposed `DualReadWriteErrorRateHigh` | gauge 已暴露；alert YAML 在 §4.B，待 PR 進 rules.yml |
 | 4 | `parallax_aphelion_unreachable_rate` | ✅ | ✅ `AphelionUnreachableRateHigh` | `> 0.01`（1 %）for 5m / severity warning（5 min 內持續即將觸發 circuit breaker） |
 | 5 | `parallax_crosswalk_miss_orphan_total` / `parallax_dual_read_outcomes_total` | ✅ | ✅ `CrosswalkMissRateHigh` | rate 比 `> 0.05`（5 %）for 30m / severity warning |
 | 6 | `parallax_circuit_breaker_tripped_total` | ✅ | ✅ `CircuitBreakerTripped` | `increase[10m] > 0` for 0m / severity critical（單調 counter，**沒有 72h windowed gauge**） |
 
 > **重要修正**：
 > - 不存在 `circuit_open_count_72h` gauge，請改用 `parallax_circuit_breaker_tripped_total` counter + `increase[Xh]` 表達式。
-> - `parallax_arbitration_conflict_rate` 與 `parallax_dual_read_write_error_rate` 的 gauge 已在 metrics endpoint 暴露（見 `parallax/server/routes/metrics.py:380-390`），但 `prometheus/rules/parallax-dual-read.rules.yml` 內**尚無對應 alert rule**；§4 中相關 alert YAML 為 proposed，部署前需 PR 進 rules.yml。
-> - 14-day corpus 的 72h 平均 < 0.1 % 退場條件對齊 deployed alert 0.1 %（不是 §4 proposed 的 0.3 %）。
+> - `parallax_arbitration_conflict_rate` 與 `parallax_dual_read_write_error_rate` gauge 已暴露（`parallax/server/routes/metrics.py:380-390`），但 `parallax-dual-read.rules.yml` 尚無對應 alert rule；§4.B 為 proposed YAML，部署前需 PR。
+> - 14-day corpus 退場條件 `< 0.1 %` 對齊 deployed `DualReadDiscrepancyRateHigh > 0.001`。
 
 ---
 
@@ -60,7 +60,7 @@ Dashboard URL：`https://grafana.internal/d/m3-lane-c-v03/`
 | B-1 | `parallax_dual_read_discrepancy_rate` | Time series（72h rolling） | 72 小時滾動趨勢，疊加 deploy marker |
 | B-2 | `parallax_arbitration_conflict_rate` | Time series（72h rolling） | 同上，仲裁衝突趨勢 |
 | B-3 | `parallax_dual_read_write_error_rate` | Time series（72h rolling） | 同上，寫入錯誤趨勢 |
-| B-4 | `parallax_aphelion_unreachable_rate` | Time series（72h rolling） | ⏳ placeholder，待部署 |
+| B-4 | `parallax_aphelion_unreachable_rate` | Time series（72h rolling） | Aphelion 不可達率（已部署 alert `AphelionUnreachableRateHigh`） |
 | B-5 | `parallax_crosswalk_miss_orphan_total / parallax_dual_read_outcomes_total` rate | Time series（5m rate / 30m window） | crosswalk miss 比率（已部署 alert `CrosswalkMissRateHigh`） |
 | B-6 | `parallax_circuit_breaker_tripped_total` | Bar chart（`increase[24h]` × 14d corpus 進度） | 斷路器跳脫次數 vs. corpus 觀察期日曆（counter 是 monotonic，圖表用 increase 計算每日跳脫量） |
 
@@ -74,7 +74,7 @@ Dashboard URL：`https://grafana.internal/d/m3-lane-c-v03/`
 | C-2 | `parallax_arbitration_conflict_rate` by result | Pie chart | 仲裁結果分佈（auto-resolved / manual / timeout） |
 | C-3 | `parallax_dual_read_write_error_rate` by endpoint | Table | 依寫入端點拆分的錯誤率明細 |
 | C-4 | `parallax_dual_read_discrepancy_rate` vs `parallax_arbitration_conflict_rate` | Correlation scatter | 雙讀不一致 vs 仲裁衝突相關性 |
-| C-5 | `parallax_aphelion_unreachable_rate` by node | Table | ⏳ placeholder，待部署 |
+| C-5 | `parallax_aphelion_unreachable_rate` by node | Table | 依 Aphelion 節點拆分的不可達率（gauge 已部署） |
 | C-6 | `parallax_circuit_breaker_tripped_total` timeline | Event timeline | 斷路器跳脫事件時間線（每次 counter increase = 一次跳脫），疊加 deploy / drain 事件 |
 
 > **操作提示**：排查場景 A/B 時，先看 C-1/C-2 定位問題 query type 或仲裁規則，再回溯 Block B 趨勢確認是否為突發或漸進。
@@ -165,7 +165,7 @@ groups:
 
 ### 場景 A：Discrepancy Spike
 
-**觸發條件**：`M3DiscrepancyRateHigh`（P0）
+**觸發條件**：`DualReadDiscrepancyRateHigh`（severity: warning，deployed §4.A）
 
 **排查步驟**：
 
@@ -180,7 +180,7 @@ groups:
 
 ### 場景 B：Arbitration Conflict
 
-**觸發條件**：`M3ArbitrationConflictHigh`（P0）
+**觸發條件**：`ArbitrationConflictRateHigh`（severity: warning，§4.B proposed — gauge ✅，alert ⏳ 待 PR）
 
 **排查步驟**：
 
@@ -194,7 +194,7 @@ groups:
 
 ### 場景 C：Circuit Breaker Trip
 
-**觸發條件**：`M3CircuitBreakerTripsHigh`（P2）或 `M3AphelionUnreachableSustained`（P1）
+**觸發條件**：`CircuitBreakerTripped`（severity: critical，deployed §4.A）或前置警示 `AphelionUnreachableRateHigh`（severity: warning，deployed §4.A）
 
 **排查步驟**：
 

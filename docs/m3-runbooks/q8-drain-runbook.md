@@ -282,12 +282,12 @@ module.exports = {
     listen_timeout: 10000,
     shutdown_with_message: true,  // 支持 graceful shutdown via IPC
     // 注意：pm2 的 kill_timeout 上限較低，
-    // 若需 90s drain 建議改用 systemd
+    // server-side drain 上限 900s（lifespan.py），pm2 撐不到，建議改用 systemd
   }]
 };
 ```
 
-> **⚠️ 注意**：pm2 的 `kill_timeout` 最大實務值約 15-30s。若 drain 需要更長時間，**強烈建議使用 systemd**，其 `TimeoutStopSec` 可設至 100s 以上。
+> **⚠️ 注意**：pm2 的 `kill_timeout` 最大實務值約 15-30s，撐不住 `lifespan.py` 的 900s server-side drain。**強烈建議使用 systemd**，將 `TimeoutStopSec` 設為 960s（900s + 60s buffer）。
 
 ---
 
