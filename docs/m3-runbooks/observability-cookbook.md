@@ -26,15 +26,15 @@
 | # | Gauge 名稱 | Gauge 部署 | Alert 部署 | Alert 閾值（已部署）/ Rationale |
 |---|-----------|-----------|-----------|-------------------------------|
 | 1 | `parallax_dual_read_discrepancy_rate` | ✅ | ✅ `DualReadDiscrepancyRateHigh` | `> 0.001`（0.1 %）for 30m / severity warning（對齊 M3 DoD 的 0.1 % 門檻） |
-| 2 | `parallax_arbitration_conflict_rate` | ✅ | ⏳ proposed `ArbitrationConflictRateHigh` | gauge 已暴露；alert YAML 在 §4.B，待 PR 進 rules.yml |
-| 3 | `parallax_dual_read_write_error_rate` | ✅ | ⏳ proposed `DualReadWriteErrorRateHigh` | gauge 已暴露；alert YAML 在 §4.B，待 PR 進 rules.yml |
+| 2 | `parallax_arbitration_conflict_rate` | ✅ | ✅ `ArbitrationConflictRateHigh` | `> 0.015`（1.5 %）for 1m / severity warning（alert 較鬆，留 0.5 % buffer 對 14-day corpus DoD 的 1 % 退場條件） |
+| 3 | `parallax_dual_read_write_error_rate` | ✅ | ✅ `DualReadWriteErrorRateHigh` | `> 0.0005`（0.05 %）for 2m / severity warning（alert 較鬆，留 0.03 % buffer 對 corpus DoD 的 0.02 %） |
 | 4 | `parallax_aphelion_unreachable_rate` | ✅ | ✅ `AphelionUnreachableRateHigh` | `> 0.01`（1 %）for 5m / severity warning（5 min 內持續即將觸發 circuit breaker） |
 | 5 | `parallax_crosswalk_miss_orphan_total` / `parallax_dual_read_outcomes_total` | ✅ | ✅ `CrosswalkMissRateHigh` | rate 比 `> 0.05`（5 %）for 30m / severity warning |
 | 6 | `parallax_circuit_breaker_tripped_total` | ✅ | ✅ `CircuitBreakerTripped` | `increase[10m] > 0` for 0m / severity critical（單調 counter，**沒有 72h windowed gauge**） |
 
 > **重要修正**：
 > - 不存在 `circuit_open_count_72h` gauge，請改用 `parallax_circuit_breaker_tripped_total` counter + `increase[Xh]` 表達式。
-> - `parallax_arbitration_conflict_rate` 與 `parallax_dual_read_write_error_rate` gauge 已暴露（`parallax/server/routes/metrics.py:380-390`），但 `parallax-dual-read.rules.yml` 尚無對應 alert rule；§4.B 為 proposed YAML，部署前需 PR。
+> - `parallax_arbitration_conflict_rate` 與 `parallax_dual_read_write_error_rate` 對應 alert rule 已部署（2026-05-04 PR），閾值 `1.5 %` / `0.05 %` 設計留 buffer 對 14-day corpus DoD 1 % / 0.02 %。
 > - 14-day corpus 退場條件 `< 0.1 %` 對齊 deployed `DualReadDiscrepancyRateHigh > 0.001`。
 
 ---
@@ -48,8 +48,8 @@ Dashboard URL：`https://grafana.internal/d/m3-lane-c-v03/`
 | Panel | 指標來源 | 顯示方式 | 說明 |
 |-------|---------|---------|------|
 | A-1 | `parallax_dual_read_discrepancy_rate` | Stat + sparkline | 即時雙讀不一致率，**紅色閾值線 0.1 %**（對齊 deployed `DualReadDiscrepancyRateHigh`） |
-| A-2 | `parallax_arbitration_conflict_rate` | Stat + sparkline | 即時仲裁衝突率（黃色閾值線 1.5 %，alert ⏳ proposed） |
-| A-3 | `parallax_dual_read_write_error_rate` | Stat + sparkline | 即時雙寫錯誤率（黃色閾值線 0.05 %，alert ⏳ proposed） |
+| A-2 | `parallax_arbitration_conflict_rate` | Stat + sparkline | 即時仲裁衝突率（黃色閾值線 1.5 %，alert deployed `ArbitrationConflictRateHigh`） |
+| A-3 | `parallax_dual_read_write_error_rate` | Stat + sparkline | 即時雙寫錯誤率（黃色閾值線 0.05 %，alert deployed `DualReadWriteErrorRateHigh`） |
 
 > **操作提示**：Block A 是 oncall 每次 alert 觸發時第一眼看到的區域。若三個 panel 均為綠色，可快速排除 M3 本身問題。
 
@@ -83,7 +83,7 @@ Dashboard URL：`https://grafana.internal/d/m3-lane-c-v03/`
 
 ## 4　Prometheus Alert Rules 與 Severity 分級
 
-> 本節分兩段：(A) **已部署**規則直接引用 `prometheus/rules/parallax-dual-read.rules.yml`；(B) **proposed** 規則需另行 PR。閾值以 deployed 為準，若要改採 cookbook 的 P0/P1 tier 必須先動 rules.yml。
+> 本節分兩段：(A) **首批 deployed** 規則；(B) **第二批 deployed**（2026-05-04 補上 `ArbitrationConflictRateHigh` + `DualReadWriteErrorRateHigh`）。所有 alert 都活在同一個 `parallax_dual_read` group。閾值以 rules.yml 為準。
 
 ### 4.A　已部署規則（`prometheus/rules/parallax-dual-read.rules.yml`，single source of truth）
 
@@ -125,28 +125,25 @@ groups:
         labels: { severity: warning, component: parallax_dual_read }
 ```
 
-### 4.B　Proposed 規則（**尚未 ship 進 rules.yml**，oncall 不會收到 page）
+### 4.B　Deployed 規則 — 第二批（2026-05-04 PR）
+
+> 兩條 alert 直接寫進 §4.A 同一個 `parallax_dual_read` group（單一 SSoT），閾值刻意比 14-day corpus DoD 退場條件鬆，留 buffer 避 false positive — 詳見 §2 註解。
+> 真檔位置：`prometheus/rules/parallax-dual-read.rules.yml`，無獨立 `parallax_dual_read_proposed` group。
 
 ```yaml
-# 部署前先 PR 進 prometheus/rules/parallax-dual-read.rules.yml，確認與 4.A 不重疊
-groups:
-  - name: parallax_dual_read_proposed
-    rules:
-      # 仲裁衝突率（gauge 已暴露，alert 待 PR）
-      - alert: ArbitrationConflictRateHigh
-        expr: parallax_arbitration_conflict_rate > 0.015      # 1.5 %
-        for: 1m
-        labels: { severity: warning, component: parallax_dual_read }
-        annotations:
-          runbook: "docs/m3-runbooks/observability-cookbook.md#場景-b-arbitration-conflict"
+- alert: ArbitrationConflictRateHigh
+  expr: parallax_arbitration_conflict_rate > 0.015      # 1.5 % alert / 1 % corpus DoD
+  for: 1m
+  labels: { severity: warning, component: parallax_dual_read }
+  annotations:
+    runbook: docs/m3-runbooks/observability-cookbook.md#場景-b-arbitration-conflict
 
-      # 雙寫錯誤率（gauge 已暴露，alert 待 PR）
-      - alert: DualReadWriteErrorRateHigh
-        expr: parallax_dual_read_write_error_rate > 0.0005    # 0.05 %
-        for: 2m
-        labels: { severity: warning, component: parallax_dual_read }
-        annotations:
-          runbook: "docs/m3-runbooks/observability-cookbook.md#場景-a-discrepancy-spike"
+- alert: DualReadWriteErrorRateHigh
+  expr: parallax_dual_read_write_error_rate > 0.0005    # 0.05 % alert / 0.02 % corpus DoD
+  for: 2m
+  labels: { severity: warning, component: parallax_dual_read }
+  annotations:
+    runbook: docs/m3-runbooks/observability-cookbook.md#場景-a-discrepancy-spike
 ```
 
 ### Severity 對應
@@ -156,8 +153,7 @@ groups:
 | Prometheus severity | 內部分級 | 通知管道 | 回應 SLA | 對應 deployed alerts |
 |---|---|---|---|---|
 | `critical` | P0 | PagerDuty + Slack #m3-incidents | 5 分鐘內 ack | `CircuitBreakerTripped`、`DrainTimeoutDetected` |
-| `warning` | P1 | Slack #m3-alerts + email | 15 分鐘內 ack | `DualReadDiscrepancyRateHigh`、`AphelionUnreachableRateHigh`、`CrosswalkMissRateHigh` |
-| (proposed only) | — | (尚無頻道) | — | §4.B 內所有 proposed 規則 |
+| `warning` | P1 | Slack #m3-alerts + email | 15 分鐘內 ack | `DualReadDiscrepancyRateHigh`、`AphelionUnreachableRateHigh`、`CrosswalkMissRateHigh`、`ArbitrationConflictRateHigh`、`DualReadWriteErrorRateHigh` |
 
 ---
 
@@ -180,7 +176,7 @@ groups:
 
 ### 場景 B：Arbitration Conflict
 
-**觸發條件**：`ArbitrationConflictRateHigh`（severity: warning，§4.B proposed — gauge ✅，alert ⏳ 待 PR）
+**觸發條件**：`ArbitrationConflictRateHigh`（severity: warning，deployed §4.B）
 
 **排查步驟**：
 

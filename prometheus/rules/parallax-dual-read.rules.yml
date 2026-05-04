@@ -78,3 +78,35 @@ groups:
           description: |
             Dual-read discrepancy rate exceeded the 0.1% DoD threshold for 30 minutes.
             If sustained 60min consider rolling back DUAL_READ=false.
+
+      # Alert threshold (1.5%) intentionally looser than 14-day corpus DoD
+      # exit threshold (1%, see docs/m3-runbooks/observability-cookbook.md §2)
+      # — alert is sized to avoid false positives during normal operation;
+      # DoD threshold gates corpus exit. Both surface the same gauge.
+      - alert: ArbitrationConflictRateHigh
+        expr: parallax_arbitration_conflict_rate > 0.015
+        for: 1m
+        labels:
+          severity: warning
+          component: parallax_dual_read
+        annotations:
+          summary: Arbitration conflict rate above 1.5% for 1min
+          description: |
+            arbitration_conflict_rate exceeded 1.5% for 1 minute. Investigate
+            recent rule-table changes or upstream payload shape drift.
+          runbook: docs/m3-runbooks/observability-cookbook.md#場景-b-arbitration-conflict
+
+      # Alert threshold (0.05%) intentionally looser than 14-day corpus DoD
+      # exit threshold (0.02%) — see ArbitrationConflictRateHigh rationale above.
+      - alert: DualReadWriteErrorRateHigh
+        expr: parallax_dual_read_write_error_rate > 0.0005
+        for: 2m
+        labels:
+          severity: warning
+          component: parallax_dual_read
+        annotations:
+          summary: Dual-read write error rate above 0.05% for 2min
+          description: |
+            dual_read_write_error_rate exceeded 0.05% for 2 minutes. Check
+            primary write path and Aphelion bridge stub for raised exceptions.
+          runbook: docs/m3-runbooks/observability-cookbook.md#場景-a-discrepancy-spike
