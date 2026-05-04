@@ -94,7 +94,7 @@ groups:
           description: |
             arbitration_conflict_rate exceeded 1.5% for 1 minute. Investigate
             recent rule-table changes or upstream payload shape drift.
-          runbook: docs/m3-runbooks/observability-cookbook.md#場景-b-arbitration-conflict
+            Runbook: docs/m3-runbooks/observability-cookbook.md §5 場景 B.
 
       # Alert threshold (0.05%) intentionally looser than 14-day corpus DoD
       # exit threshold (0.02%) — see ArbitrationConflictRateHigh rationale above.
@@ -109,4 +109,4 @@ groups:
           description: |
             dual_read_write_error_rate exceeded 0.05% for 2 minutes. Check
             primary write path and Aphelion bridge stub for raised exceptions.
-          runbook: docs/m3-runbooks/observability-cookbook.md#場景-a-discrepancy-spike
+            Runbook: docs/m3-runbooks/observability-cookbook.md §5 場景 A.
